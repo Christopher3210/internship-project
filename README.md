@@ -1,6 +1,6 @@
 # Internship Supply Chain Admin
 
-一个用于熟悉 Node.js 全栈开发流程的供应链管理后台基础项目。项目当前完成了用户注册与登录，以及 Company、Order、User、Dashboard 的基础导航页面；后续将逐步补充公司信息、订单追踪、数据分析与 Agent 能力。
+一个用于熟悉 Node.js 全栈开发流程的供应链管理后台基础项目。当前迭代围绕用户管理与公司信息检索展开；页面和接口范围会随每周任务调整。
 
 ## 当前完成内容
 
@@ -9,6 +9,9 @@
 - Swagger API 文档与接口调试页面
 - Dashboard、Company、Order、User 后台导航壳
 - PostgreSQL 用户表映射与 TypeORM 数据访问
+- User：按姓名键入搜索、新增用户、勾选多选和批量删除
+- Company：按公司名键入搜索、按 Level 1–4 多选筛选
+- Company CRUD API；字段参考提供的 `companies_0708.csv` 与 `relationships_0708.csv`
 
 ## 技术架构
 
@@ -76,6 +79,14 @@ npm run dev
 | --- | --- | --- |
 | `POST` | `/users/sign-up` | 注册用户 |
 | `POST` | `/users/login` | 登录并获取 JWT access token |
+| `GET` | `/users?name=Alice` | 按姓名查询用户 |
+| `POST` | `/users` | 新增用户 |
+| `PATCH` | `/users/:id` | 修改用户 |
+| `DELETE` | `/users` | 按 ID 数组批量删除用户 |
+| `GET` | `/companies?name=Doyle&levels=1,2` | 按公司名、Level 查询公司 |
+| `POST` | `/companies` | 新增公司 |
+| `PATCH` | `/companies/:companyCode` | 修改公司 |
+| `DELETE` | `/companies/:companyCode` | 删除公司 |
 
 请求示例：
 
@@ -101,7 +112,4 @@ npm run dev
 
 ## 后续计划
 
-1. 实现 Company 模块及公司信息增删查改接口。
-2. 实现 Order 模块、订单状态流转与追踪记录。
-3. 补充 Dashboard 数据聚合与可视化。
-4. 在业务数据和权限边界明确后，接入 Redis、pgvector 与 Agent 查询工作流。
+后续功能将根据每周任务安排调整和实现。

@@ -1,7 +1,10 @@
-import { Body, Controller, HttpCode, HttpStatus, Post } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Patch, Post, Query } from '@nestjs/common';
 import { ApiCreatedResponse, ApiOkResponse, ApiTags } from '@nestjs/swagger';
+import { CreateUserDto } from './dto/create-user.dto.js';
+import { DeleteUsersDto } from './dto/delete-users.dto.js';
 import { LoginDto } from './dto/login.dto.js';
 import { SignUpDto } from './dto/sign-up.dto.js';
+import { UpdateUserDto } from './dto/update-user.dto.js';
 import { UsersService } from './users.service.js';
 
 @ApiTags('users')
@@ -20,5 +23,25 @@ export class UsersController {
   @ApiOkResponse({ description: '登录成功并返回 access token' })
   login(@Body() loginDto: LoginDto) {
     return this.usersService.login(loginDto);
+  }
+
+  @Get()
+  findAll(@Query('name') name?: string) {
+    return this.usersService.findAll(name);
+  }
+
+  @Post()
+  create(@Body() createUserDto: CreateUserDto) {
+    return this.usersService.create(createUserDto);
+  }
+
+  @Patch(':id')
+  update(@Param('id') id: string, @Body() updateUserDto: UpdateUserDto) {
+    return this.usersService.update(id, updateUserDto);
+  }
+
+  @Delete()
+  removeMany(@Body() deleteUsersDto: DeleteUsersDto) {
+    return this.usersService.removeMany(deleteUsersDto.ids);
   }
 }
