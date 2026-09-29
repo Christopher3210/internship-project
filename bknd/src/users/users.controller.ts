@@ -26,8 +26,8 @@ export class UsersController {
   }
 
   @Get()
-  findAll(@Query('name') name?: string) {
-    return this.usersService.findAll(name);
+  findAll(@Query('name') name?: string, @Query('roles') roles?: string) {
+    return this.usersService.findAll(name, roles);
   }
 
   @Post()

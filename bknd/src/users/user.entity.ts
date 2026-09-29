@@ -11,6 +11,12 @@ export class User {
   @Column({ unique: true })
   email!: string;
 
+  @Column({ length: 80, default: 'Member' })
+  role!: string;
+
+  @Column({ length: 30, default: 'Active' })
+  status!: string;
+
   @Column({ select: false })
   passwordHash!: string;
 

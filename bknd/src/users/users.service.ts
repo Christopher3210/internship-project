@@ -24,6 +24,8 @@ export class UsersService {
     const user = await this.usersRepository.save(this.usersRepository.create({
       name: normalizedEmail.split('@')[0],
       email: normalizedEmail,
+      role: 'Member',
+      status: 'Active',
       passwordHash: await bcrypt.hash(password, 12),
     }));
     return { message: '注册成功', user: this.publicUser(user) };
@@ -45,10 +47,14 @@ export class UsersService {
     };
   }
 
-  async findAll(name?: string) {
+  async findAll(name?: string, roles?: string) {
     const query = this.usersRepository.createQueryBuilder('user');
     if (name?.trim()) {
       query.where('user.name ILIKE :name', { name: `%${name.trim()}%` });
+    }
+    const roleList = roles?.split(',').map((role) => role.trim()).filter(Boolean) ?? [];
+    if (roleList.length) {
+      query.andWhere('user.role IN (:...roles)', { roles: roleList });
     }
     const users = await query.orderBy('user.createdAt', 'DESC').getMany();
     return users.map((user) => this.publicUser(user));
@@ -63,6 +69,8 @@ export class UsersService {
     const user = await this.usersRepository.save(this.usersRepository.create({
       name: createUserDto.name.trim(),
       email,
+      role: createUserDto.role.trim(),
+      status: createUserDto.status.trim(),
       passwordHash: await bcrypt.hash(createUserDto.password, 12),
     }));
     return this.publicUser(user);
@@ -85,6 +93,8 @@ export class UsersService {
       user.email = email;
     }
     if (updateUserDto.name) user.name = updateUserDto.name.trim();
+    if (updateUserDto.role) user.role = updateUserDto.role.trim();
+    if (updateUserDto.status) user.status = updateUserDto.status.trim();
     if (updateUserDto.password) user.passwordHash = await bcrypt.hash(updateUserDto.password, 12);
 
     return this.publicUser(await this.usersRepository.save(user));
@@ -96,6 +106,13 @@ export class UsersService {
   }
 
   private publicUser(user: User) {
-    return { id: user.id, name: user.name, email: user.email, createdAt: user.createdAt };
+    return {
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      status: user.status,
+      createdAt: user.createdAt,
+    };
   }
 }

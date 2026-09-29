@@ -12,6 +12,18 @@ export class CreateUserDto {
   @IsEmail()
   email!: string;
 
+  @ApiProperty({ example: 'Operations Manager' })
+  @IsString()
+  @MinLength(1)
+  @MaxLength(80)
+  role!: string;
+
+  @ApiProperty({ example: 'Active' })
+  @IsString()
+  @MinLength(1)
+  @MaxLength(30)
+  status!: string;
+
   @ApiProperty({ example: 'at-least-8-characters' })
   @IsString()
   @MinLength(8)

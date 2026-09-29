@@ -26,9 +26,6 @@ export class Company {
   @Column({ type: 'int' })
   employees!: number;
 
-  @Column({ name: 'parent_company', length: 32, nullable: true })
-  parentCompany?: string | null;
-
   @CreateDateColumn()
   createdAt!: Date;
 
