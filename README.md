@@ -1,5 +1,34 @@
 # Internship Supply Chain Admin
 
+## Current progress
+
+This iteration delivers the User and Company management modules:
+
+- Authentication pages and dashboard navigation.
+- User table: name search, Title/Role multi-select filter, create, edit, single deletion, and batch deletion.
+- Company table: company-name search, Level multi-select filter, profitability-efficiency display, and expandable company details.
+- NestJS RESTful CRUD APIs for users and companies, documented with Swagger at `http://localhost:3001/api`.
+- PostgreSQL `users`, `companies`, and `relationships` tables. The Company module imports the supplied CSV data (2,000 company and relationship records) on startup when needed.
+
+## Demo startup order
+
+Open three terminals and start services in this order:
+
+```powershell
+# 1. Database containers
+docker start internship-postgres internship-redis
+
+# 2. NestJS backend
+cd bknd
+npm run start:dev
+
+# 3. Next.js frontend (new terminal)
+cd ftnd
+npm run dev
+```
+
+Open `http://localhost:3000/company` to demonstrate the Company module, or `http://localhost:3001/api` to inspect and test APIs.
+
 一个用于熟悉 Node.js 全栈开发流程的供应链管理后台基础项目。当前迭代围绕用户管理与公司信息检索展开；页面和接口范围会随每周任务调整。
 
 ## 当前完成内容
