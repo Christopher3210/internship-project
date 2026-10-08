@@ -6,6 +6,8 @@ export class CompanyRelationship {
   @PrimaryColumn({ name: 'company_code', length: 32 })
   companyCode!: string;
 
-  @Column({ name: 'parent_company', length: 32, nullable: true })
+  // `string | null` is reflected as Object at runtime, so PostgreSQL needs
+  // an explicit varchar type for TypeORM to create and query this column.
+  @Column({ name: 'parent_company', type: 'varchar', length: 32, nullable: true })
   parentCompany?: string | null;
 }
