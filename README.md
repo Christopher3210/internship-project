@@ -6,7 +6,7 @@ This iteration delivers the User and Company management modules:
 
 - Authentication pages and dashboard navigation.
 - User table: name search, Title/Role multi-select filter, create, edit, single deletion, and batch deletion.
-- Company table: company-name search, Level multi-select filter, profitability-efficiency display, and expandable company details.
+- Company table: company-name search, Level multi-select filter, server-side pagination, profitability-efficiency display, and expandable company details.
 - NestJS RESTful CRUD APIs for users and companies, documented with Swagger at `http://localhost:3001/api`.
 - PostgreSQL `users`, `companies`, and `relationships` tables. The Company module imports the supplied CSV data (2,000 company and relationship records) on startup when needed.
 
@@ -112,7 +112,7 @@ npm run dev
 | `POST` | `/users` | 新增用户 |
 | `PATCH` | `/users/:id` | 修改用户 |
 | `DELETE` | `/users` | 按 ID 数组批量删除用户 |
-| `GET` | `/companies?name=Doyle&levels=1,2` | 按公司名、Level 查询公司 |
+| `GET` | `/companies?name=Doyle&levels=1,2&page=1&pageSize=20` | 按公司名、Level 筛选并分页查询公司 |
 | `POST` | `/companies` | 新增公司 |
 | `PATCH` | `/companies/:companyCode` | 修改公司 |
 | `DELETE` | `/companies/:companyCode` | 删除公司 |

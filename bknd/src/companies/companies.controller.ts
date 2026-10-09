@@ -10,8 +10,13 @@ export class CompaniesController {
   constructor(private readonly companiesService: CompaniesService) {}
 
   @Get()
-  findAll(@Query('name') name?: string, @Query('levels') levels?: string) {
-    return this.companiesService.findAll(name, levels);
+  findAll(
+    @Query('name') name?: string,
+    @Query('levels') levels?: string,
+    @Query('page') page?: string,
+    @Query('pageSize') pageSize?: string,
+  ) {
+    return this.companiesService.findAll(name, levels, page, pageSize);
   }
 
   @Post()

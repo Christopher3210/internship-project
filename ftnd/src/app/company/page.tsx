@@ -7,13 +7,20 @@ import SearchOutlined from "@mui/icons-material/SearchOutlined";
 import {
   Alert, Box, Checkbox, Chip, Collapse, FormControl, IconButton, InputAdornment, InputLabel,
   ListItemText, MenuItem, OutlinedInput, Paper, Select, Snackbar, Stack, Table, TableBody,
-  TableCell, TableContainer, TableHead, TableRow, TextField, Typography,
+  TableCell, TableContainer, TableHead, TablePagination, TableRow, TextField, Typography,
 } from "@mui/material";
 import { useCallback, useEffect, useState } from "react";
 
 type Company = {
   companyCode: string; companyName: string; level: number; country: string; city: string;
   foundedYear: number; annualRevenue: number; employees: number;
+};
+
+type CompanyPage = {
+  items: Company[];
+  total: number;
+  page: number;
+  pageSize: number;
 };
 
 const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
@@ -42,24 +49,43 @@ function CompanyRow({ company }: { company: Company }) {
 export default function CompanyPage() {
   const [companies, setCompanies] = useState<Company[]>([]);
   const [nameQuery, setNameQuery] = useState("");
+  const [debouncedNameQuery, setDebouncedNameQuery] = useState("");
   const [levels, setLevels] = useState<number[]>([]);
+  const [page, setPage] = useState(0);
+  const [pageSize, setPageSize] = useState(20);
+  const [total, setTotal] = useState(0);
   const [notice, setNotice] = useState<string | null>(null);
 
-  const loadCompanies = useCallback(async (query: string, selectedLevels: number[]) => {
+  const loadCompanies = useCallback(async (query: string, selectedLevels: number[], currentPage: number, currentPageSize: number) => {
     try {
       const params = new URLSearchParams();
       if (query.trim()) params.set("name", query.trim());
       if (selectedLevels.length) params.set("levels", selectedLevels.join(","));
+      params.set("page", String(currentPage + 1));
+      params.set("pageSize", String(currentPageSize));
       const response = await fetch(`${apiBaseUrl}/companies?${params.toString()}`);
       if (!response.ok) throw new Error();
-      setCompanies(await response.json());
+      const data: CompanyPage = await response.json();
+      if (data.items.length === 0 && data.total > 0 && currentPage > 0) {
+        setPage(0);
+        return;
+      }
+      setCompanies(data.items);
+      setTotal(data.total);
     } catch { setNotice("无法加载公司数据，请确认后端服务已启动。"); }
   }, []);
 
   useEffect(() => {
-    const timer = window.setTimeout(() => loadCompanies(nameQuery, levels), 250);
+    const timer = window.setTimeout(() => setDebouncedNameQuery(nameQuery), 250);
     return () => window.clearTimeout(timer);
-  }, [nameQuery, levels, loadCompanies]);
+  }, [nameQuery]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      void loadCompanies(debouncedNameQuery, levels, page, pageSize);
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [debouncedNameQuery, levels, page, pageSize, loadCompanies]);
 
   return <DashboardShell title="Company"><Stack spacing={3}>
     <Typography color="text.secondary">按公司名称搜索，按 Level 多选过滤；点击每行箭头查看公司详情。</Typography>
@@ -73,5 +99,6 @@ export default function CompanyPage() {
       {companies.map((company) => <CompanyRow key={company.companyCode} company={company} />)}
       {!companies.length && <TableRow><TableCell colSpan={5} align="center">没有找到公司</TableCell></TableRow>}
     </TableBody></Table></TableContainer>
+    <TablePagination component="div" count={total} page={page} onPageChange={(_, nextPage) => setPage(nextPage)} rowsPerPage={pageSize} onRowsPerPageChange={(event) => { setPageSize(Number(event.target.value)); setPage(0); }} rowsPerPageOptions={[20, 50, 100]} labelRowsPerPage="每页显示" />
   </Stack><Snackbar open={Boolean(notice)} autoHideDuration={4000} onClose={() => setNotice(null)}><Alert severity="error" variant="filled">{notice}</Alert></Snackbar></DashboardShell>;
 }

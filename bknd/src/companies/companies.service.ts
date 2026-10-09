@@ -51,15 +51,27 @@ export class CompaniesService implements OnModuleInit {
     await this.relationshipsRepository.upsert(relationships, ['companyCode']);
   }
 
-  async findAll(name?: string, levels?: string) {
+  async findAll(name?: string, levels?: string, page?: string, pageSize?: string) {
+    const parsedPage = Number(page);
+    const parsedPageSize = Number(pageSize);
+    const currentPage = Number.isInteger(parsedPage) && parsedPage > 0 ? parsedPage : 1;
+    const currentPageSize = Number.isInteger(parsedPageSize) && parsedPageSize > 0
+      ? Math.min(parsedPageSize, 100)
+      : 20;
     const query = this.companiesRepository.createQueryBuilder('company')
       .leftJoin(CompanyRelationship, 'relationship', 'relationship.company_code = company.company_code')
       .addSelect('relationship.parent_company', 'parentCompany');
     if (name?.trim()) query.where('company.companyName ILIKE :name', { name: `%${name.trim()}%` });
     const selectedLevels = (levels ?? '').split(',').map(Number).filter((value) => Number.isInteger(value) && value >= 1 && value <= 4);
     if (selectedLevels.length) query.andWhere('company.level IN (:...levels)', { levels: selectedLevels });
-    const { entities, raw } = await query.orderBy('company.level', 'ASC').addOrderBy('company.companyCode', 'ASC').getRawAndEntities();
-    return entities.map((company, index) => ({
+    const total = await query.getCount();
+    const { entities, raw } = await query
+      .orderBy('company.level', 'ASC')
+      .addOrderBy('company.companyCode', 'ASC')
+      .skip((currentPage - 1) * currentPageSize)
+      .take(currentPageSize)
+      .getRawAndEntities();
+    const items = entities.map((company, index) => ({
       companyCode: company.companyCode,
       companyName: company.companyName,
       level: company.level,
@@ -70,6 +82,7 @@ export class CompaniesService implements OnModuleInit {
       employees: company.employees,
       parentCompany: raw[index].parentCompany ?? null,
     }));
+    return { items, total, page: currentPage, pageSize: currentPageSize };
   }
 
   async create(dto: CreateCompanyDto) {
