@@ -1,0 +1,150 @@
+{
+  "info": {
+    "name": "Internship Admin API - Read-only smoke tests",
+    "description": "Safe GET-only checks for the API. These requests do not create, update, or delete database records.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "App",
+      "item": [
+        {
+          "name": "GET / - health check",
+          "request": { "method": "GET", "header": [{ "key": "Accept", "value": "application/json" }], "url": "{{baseUrl}}/" },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+            "pm.test('Response is plain text', () => pm.expect(pm.response.text()).to.eql('Hello World!'));",
+            "pm.test('Content type is present', () => pm.expect(pm.response.headers.get('Content-Type')).to.be.a('string'));",
+            "pm.test('Response time is within target', () => pm.expect(pm.response.responseTime).to.be.below(Number(pm.environment.get('maxResponseTimeMs') || 3000)));"
+          ] } }]
+        }
+      ]
+    },
+    {
+      "name": "Users (read-only)",
+      "item": [
+        {
+          "name": "GET /users - all users",
+          "request": { "method": "GET", "header": [{ "key": "Accept", "value": "application/json" }], "url": "{{baseUrl}}/users" },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "const body = pm.response.json();",
+            "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+            "pm.test('Response is a JSON array', () => pm.expect(body).to.be.an('array'));",
+            "pm.test('Each user has the documented public fields', () => body.forEach(user => { pm.expect(user).to.have.all.keys('id', 'name', 'email', 'role', 'status', 'createdAt'); }));",
+            "pm.test('Password hash is never exposed', () => body.forEach(user => pm.expect(user).not.to.have.property('passwordHash')));",
+            "pm.test('Response time is within target', () => pm.expect(pm.response.responseTime).to.be.below(Number(pm.environment.get('maxResponseTimeMs') || 3000)));"
+          ] } }]
+        },
+        {
+          "name": "GET /users - filter by name",
+          "request": { "method": "GET", "header": [{ "key": "Accept", "value": "application/json" }], "url": "{{baseUrl}}/users?name={{searchName}}" },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "const body = pm.response.json();",
+            "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+            "pm.test('Response is a JSON array', () => pm.expect(body).to.be.an('array'));",
+            "pm.test('Returned records match the name filter', () => body.forEach(user => pm.expect(user.name.toLowerCase()).to.include(String(pm.environment.get('searchName') || '').toLowerCase())));",
+            "pm.test('Password hash is never exposed', () => body.forEach(user => pm.expect(user).not.to.have.property('passwordHash')));",
+            "pm.test('Response time is within target', () => pm.expect(pm.response.responseTime).to.be.below(Number(pm.environment.get('maxResponseTimeMs') || 3000)));"
+          ] } }]
+        },
+        {
+          "name": "GET /users - filter by multiple roles",
+          "request": { "method": "GET", "header": [{ "key": "Accept", "value": "application/json" }], "url": "{{baseUrl}}/users?roles=Member,Admin" },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "const body = pm.response.json();",
+            "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+            "pm.test('Response is a JSON array', () => pm.expect(body).to.be.an('array'));",
+            "pm.test('Every returned role is one of the requested roles', () => body.forEach(user => pm.expect(['Member', 'Admin']).to.include(user.role)));",
+            "pm.test('Password hash is never exposed', () => body.forEach(user => pm.expect(user).not.to.have.property('passwordHash')));",
+            "pm.test('Response time is within target', () => pm.expect(pm.response.responseTime).to.be.below(Number(pm.environment.get('maxResponseTimeMs') || 3000)));"
+          ] } }]
+        }
+      ]
+    },
+    {
+      "name": "Companies (read-only)",
+      "item": [
+        {
+          "name": "GET /companies - default page",
+          "request": { "method": "GET", "header": [{ "key": "Accept", "value": "application/json" }], "url": "{{baseUrl}}/companies" },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "const body = pm.response.json();",
+            "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+            "pm.test('Response has pagination fields', () => { pm.expect(body).to.have.keys('items', 'total', 'page', 'pageSize'); pm.expect(body.items).to.be.an('array'); });",
+            "pm.test('Default pagination is page 1 with 20 items', () => { pm.expect(body.page).to.eql(1); pm.expect(body.pageSize).to.eql(20); });",
+            "pm.test('Company items have expected fields', () => body.items.forEach(company => pm.expect(company).to.have.all.keys('companyCode', 'companyName', 'level', 'country', 'city', 'foundedYear', 'annualRevenue', 'employees', 'parentCompany')));",
+            "pm.test('Total is not smaller than this page', () => pm.expect(body.total).to.be.at.least(body.items.length));",
+            "pm.test('Response time is within target', () => pm.expect(pm.response.responseTime).to.be.below(Number(pm.environment.get('maxResponseTimeMs') || 3000)));"
+          ] } }]
+        },
+        {
+          "name": "GET /companies - filter by one level",
+          "request": { "method": "GET", "header": [{ "key": "Accept", "value": "application/json" }], "url": "{{baseUrl}}/companies?levels=1" },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "const body = pm.response.json();",
+            "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+            "pm.test('Response has pagination fields', () => { pm.expect(body.items).to.be.an('array'); pm.expect(body.total).to.be.a('number'); });",
+            "pm.test('Every returned company has level 1', () => body.items.forEach(company => pm.expect(company.level).to.eql(1)));",
+            "pm.test('Page size does not exceed 100', () => pm.expect(body.items.length).to.be.at.most(100));",
+            "pm.test('Response time is within target', () => pm.expect(pm.response.responseTime).to.be.below(Number(pm.environment.get('maxResponseTimeMs') || 3000)));"
+          ] } }]
+        },
+        {
+          "name": "GET /companies - multiple levels and page-size cap",
+          "request": { "method": "GET", "header": [{ "key": "Accept", "value": "application/json" }], "url": "{{baseUrl}}/companies?levels=1,2&page=1&pageSize=500" },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "const body = pm.response.json();",
+            "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+            "pm.test('Page metadata is returned', () => { pm.expect(body.page).to.eql(1); pm.expect(body.pageSize).to.eql(100); });",
+            "pm.test('Only requested levels are returned', () => body.items.forEach(company => pm.expect([1, 2]).to.include(company.level)));",
+            "pm.test('Items are ordered by level then company code', () => { const sorted = [...body.items].sort((a, b) => a.level - b.level || a.companyCode.localeCompare(b.companyCode)); pm.expect(body.items).to.eql(sorted); });",
+            "pm.test('Response time is within target', () => pm.expect(pm.response.responseTime).to.be.below(Number(pm.environment.get('maxResponseTimeMs') || 3000)));"
+          ] } }]
+        }
+      ]
+    },
+    {
+      "name": "Dashboard (read-only)",
+      "item": [
+        {
+          "name": "GET /dashboard/summary",
+          "request": { "method": "GET", "header": [{ "key": "Accept", "value": "application/json" }], "url": "{{baseUrl}}/dashboard/summary" },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "const body = pm.response.json();",
+            "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+            "pm.test('All four summary metrics are present', () => pm.expect(body).to.have.all.keys('companyCount', 'totalRevenue', 'countryCount', 'employeeCount'));",
+            "pm.test('Metrics are non-negative numbers', () => Object.values(body).forEach(value => { pm.expect(value).to.be.a('number'); pm.expect(value).to.be.at.least(0); }));",
+            "pm.test('Country count cannot exceed company count', () => pm.expect(body.countryCount).to.be.at.most(body.companyCount));",
+            "pm.test('Response time is within target', () => pm.expect(pm.response.responseTime).to.be.below(Number(pm.environment.get('maxResponseTimeMs') || 3000)));"
+          ] } }]
+        },
+        {
+          "name": "GET /dashboard/levels",
+          "request": { "method": "GET", "header": [{ "key": "Accept", "value": "application/json" }], "url": "{{baseUrl}}/dashboard/levels" },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "const body = pm.response.json();",
+            "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+            "pm.test('Total and levels array are present', () => { pm.expect(body.totalCompanies).to.be.a('number'); pm.expect(body.levels).to.be.an('array'); });",
+            "pm.test('Level entries have count and percentage', () => body.levels.forEach(item => { pm.expect(item.level).to.be.a('number'); pm.expect(item.companyCount).to.be.a('number'); pm.expect(item.percentage).to.be.a('number'); }));",
+            "pm.test('Level counts add up to the total', () => pm.expect(body.levels.reduce((sum, item) => sum + item.companyCount, 0)).to.eql(body.totalCompanies));",
+            "pm.test('Percentages add up to approximately 100 when data exists', () => { if (body.totalCompanies > 0) pm.expect(body.levels.reduce((sum, item) => sum + item.percentage, 0)).to.be.within(99.9, 100.1); });",
+            "pm.test('Response time is within target', () => pm.expect(pm.response.responseTime).to.be.below(Number(pm.environment.get('maxResponseTimeMs') || 3000)));"
+          ] } }]
+        },
+        {
+          "name": "GET /dashboard/founded-years",
+          "request": { "method": "GET", "header": [{ "key": "Accept", "value": "application/json" }], "url": "{{baseUrl}}/dashboard/founded-years" },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "const body = pm.response.json();",
+            "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+            "pm.test('Years is an array', () => pm.expect(body.years).to.be.an('array'));",
+            "pm.test('Each point has year, new count, and cumulative count', () => body.years.forEach(point => { pm.expect(point.year).to.be.a('number'); pm.expect(point.newCompanies).to.be.a('number'); pm.expect(point.cumulativeCompanies).to.be.a('number'); }));",
+            "pm.test('Years are ascending', () => body.years.forEach((point, index) => { if (index > 0) pm.expect(point.year).to.be.above(body.years[index - 1].year); }));",
+            "pm.test('Cumulative counts never decrease', () => body.years.forEach((point, index) => { if (index > 0) pm.expect(point.cumulativeCompanies).to.be.at.least(body.years[index - 1].cumulativeCompanies); }));",
+            "pm.test('Response time is within target', () => pm.expect(pm.response.responseTime).to.be.below(Number(pm.environment.get('maxResponseTimeMs') || 3000)));"
+          ] } }]
+        }
+      ]
+    }
+  ]
+}

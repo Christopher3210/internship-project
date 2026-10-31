@@ -4,6 +4,7 @@ import { Alert, Box, Button, Card, CardContent, CircularProgress, Link as MuiLin
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, useState } from "react";
+import { AI_ACCESS_TOKEN_KEY } from "@/lib/ai-agent";
 
 // 这个组件会同时用于 /login 和 /sign-up 两个页面。
 type Mode = "login" | "sign-up";
@@ -74,7 +75,7 @@ export function AuthCard({ mode }: { mode: Mode }) {
       });
 
       // 后端通常返回 JSON。catch 让“后端异常但未返回 JSON”时也不会让前端崩溃。
-      const data: { message?: string | string[] } = await response.json().catch(() => ({}));
+      const data: { message?: string | string[]; accessToken?: string } = await response.json().catch(() => ({}));
 
       // NestJS 的验证错误 message 可能是字符串数组；这里统一取第一条显示。
       const message = Array.isArray(data.message) ? data.message[0] : data.message;
@@ -84,6 +85,8 @@ export function AuthCard({ mode }: { mode: Mode }) {
         setNotice({ severity: "error", text: message ?? "请求失败，请稍后重试" });
         return;
       }
+
+      if (!isSignUp && data.accessToken) window.localStorage.setItem(AI_ACCESS_TOKEN_KEY, data.accessToken);
 
       // 请求成功：先显示成功提示，再短暂停留后跳转。
       setNotice({ severity: "success", text: isSignUp ? "注册成功，请登录" : "登录成功，正在进入 Dashboard" });

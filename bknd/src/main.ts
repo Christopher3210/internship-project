@@ -10,8 +10,9 @@ async function bootstrap() {
 
   const document = SwaggerModule.createDocument(app, new DocumentBuilder()
     .setTitle('Internship Admin API')
-    .setDescription('User registration and login APIs')
+    .setDescription('User, company, and supply-chain dashboard APIs')
     .setVersion('1.0')
+    .addBearerAuth()
     .build());
   SwaggerModule.setup('api', app, document);
 

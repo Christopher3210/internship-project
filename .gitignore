@@ -9,6 +9,7 @@
 **/.env
 **/.env.local
 **/*.log
+bknd/Set-OpenAIKey.ps1
 
 # Operating-system and editor files
 .DS_Store

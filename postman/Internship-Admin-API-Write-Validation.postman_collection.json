@@ -1,0 +1,148 @@
+{
+  "info": {
+    "name": "Internship Admin API - Write and validation tests",
+    "description": "Creates uniquely named Postman test records, checks write and validation endpoints, then cleans up test records. Run against a local development database only.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Users - signup and login validation",
+      "item": [
+        {
+          "name": "POST /users/sign-up - create disposable test account",
+          "event": [
+            { "listen": "prerequest", "script": { "type": "text/javascript", "exec": ["const email = `pm-signup-${Date.now()}@example.com`;", "pm.environment.set('testSignupEmail', email);"] } },
+            { "listen": "test", "script": { "type": "text/javascript", "exec": ["const body = pm.response.json();", "pm.test('Status is 201 Created', () => pm.response.to.have.status(201));", "pm.test('Response contains a public user and message', () => { pm.expect(body.message).to.be.a('string'); pm.expect(body.user).to.include({ email: pm.environment.get('testSignupEmail'), role: 'Member', status: 'Active' }); pm.expect(body.user.id).to.be.a('string'); });", "pm.test('Password data is not returned', () => pm.expect(body.user).not.to.have.property('passwordHash'));", "pm.test('Response time is within target', () => pm.expect(pm.response.responseTime).to.be.below(Number(pm.environment.get('maxResponseTimeMs') || 3000)));", "pm.environment.set('testSignupUserId', body.user.id);"] } }
+          ],
+          "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"email\": \"{{testSignupEmail}}\",\n  \"password\": \"Postman-test-Password-2026\"\n}", "options": { "raw": { "language": "json" } } }, "url": "{{baseUrl}}/users/sign-up" }
+        },
+        {
+          "name": "POST /users/sign-up - duplicate email returns 409",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["const body = pm.response.json();", "pm.test('Status is 409 Conflict', () => pm.response.to.have.status(409));", "pm.test('Error response contains a message', () => pm.expect(body.message).to.exist);", "pm.test('Response time is within target', () => pm.expect(pm.response.responseTime).to.be.below(Number(pm.environment.get('maxResponseTimeMs') || 3000)));" ] } }],
+          "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"email\": \"{{testSignupEmail}}\",\n  \"password\": \"Postman-test-Password-2026\"\n}", "options": { "raw": { "language": "json" } } }, "url": "{{baseUrl}}/users/sign-up" }
+        },
+        {
+          "name": "POST /users/sign-up - malformed email returns 400",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["const body = pm.response.json();", "pm.test('Status is 400 Bad Request', () => pm.response.to.have.status(400));", "pm.test('Validation error is described', () => pm.expect(body.message).to.exist);", "pm.test('Response time is within target', () => pm.expect(pm.response.responseTime).to.be.below(Number(pm.environment.get('maxResponseTimeMs') || 3000)));" ] } }],
+          "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"email\": \"not-an-email\",\n  \"password\": \"Postman-test-Password-2026\"\n}", "options": { "raw": { "language": "json" } } }, "url": "{{baseUrl}}/users/sign-up" }
+        },
+        {
+          "name": "POST /users/sign-up - short password returns 400",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["const body = pm.response.json();", "pm.test('Status is 400 Bad Request', () => pm.response.to.have.status(400));", "pm.test('Validation error is described', () => pm.expect(body.message).to.exist);", "pm.test('Response time is within target', () => pm.expect(pm.response.responseTime).to.be.below(Number(pm.environment.get('maxResponseTimeMs') || 3000)));" ] } }],
+          "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"email\": \"invalid-password@example.test\",\n  \"password\": \"123\"\n}", "options": { "raw": { "language": "json" } } }, "url": "{{baseUrl}}/users/sign-up" }
+        },
+        {
+          "name": "POST /users/login - valid credentials return token",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["const body = pm.response.json();", "pm.test('Status is 200 OK', () => pm.response.to.have.status(200));", "pm.test('Response contains an access token and matching user', () => { pm.expect(body.accessToken).to.be.a('string').and.not.empty; pm.expect(body.user.email).to.eql(pm.environment.get('testSignupEmail')); });", "pm.test('Password data is not returned', () => pm.expect(body.user).not.to.have.property('passwordHash'));", "pm.test('Response time is within target', () => pm.expect(pm.response.responseTime).to.be.below(Number(pm.environment.get('maxResponseTimeMs') || 3000)));" ] } }],
+          "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"email\": \"{{testSignupEmail}}\",\n  \"password\": \"Postman-test-Password-2026\"\n}", "options": { "raw": { "language": "json" } } }, "url": "{{baseUrl}}/users/login" }
+        },
+        {
+          "name": "POST /users/login - wrong password returns 401",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["const body = pm.response.json();", "pm.test('Status is 401 Unauthorized', () => pm.response.to.have.status(401));", "pm.test('Error response contains a message', () => pm.expect(body.message).to.exist);", "pm.test('Response time is within target', () => pm.expect(pm.response.responseTime).to.be.below(Number(pm.environment.get('maxResponseTimeMs') || 3000)));" ] } }],
+          "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"email\": \"{{testSignupEmail}}\",\n  \"password\": \"wrong-password\"\n}", "options": { "raw": { "language": "json" } } }, "url": "{{baseUrl}}/users/login" }
+        },
+        {
+          "name": "POST /users/login - malformed email returns 400",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["const body = pm.response.json();", "pm.test('Status is 400 Bad Request', () => pm.response.to.have.status(400));", "pm.test('Validation error is described', () => pm.expect(body.message).to.exist);", "pm.test('Response time is within target', () => pm.expect(pm.response.responseTime).to.be.below(Number(pm.environment.get('maxResponseTimeMs') || 3000)));" ] } }],
+          "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"email\": \"not-an-email\",\n  \"password\": \"anything\"\n}", "options": { "raw": { "language": "json" } } }, "url": "{{baseUrl}}/users/login" }
+        }
+      ]
+    },
+    {
+      "name": "Users - CRUD and cleanup",
+      "item": [
+        {
+          "name": "POST /users - create test user",
+          "event": [
+            { "listen": "prerequest", "script": { "type": "text/javascript", "exec": ["pm.environment.set('testCrudUserEmail', `pm-user-${Date.now()}@example.com`);"] } },
+            { "listen": "test", "script": { "type": "text/javascript", "exec": ["const body = pm.response.json();", "pm.test('Status is 201 Created', () => pm.response.to.have.status(201));", "pm.test('Created user has expected public data', () => { pm.expect(body).to.include({ email: pm.environment.get('testCrudUserEmail'), name: 'Postman Test User', role: 'Member', status: 'Active' }); pm.expect(body.id).to.be.a('string'); });", "pm.test('Password data is not returned', () => pm.expect(body).not.to.have.property('passwordHash'));", "pm.test('Response time is within target', () => pm.expect(pm.response.responseTime).to.be.below(Number(pm.environment.get('maxResponseTimeMs') || 3000)));", "pm.environment.set('testCrudUserId', body.id);"] } }
+          ],
+          "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"name\": \"Postman Test User\",\n  \"email\": \"{{testCrudUserEmail}}\",\n  \"role\": \"Member\",\n  \"status\": \"Active\",\n  \"password\": \"Postman-test-Password-2026\"\n}", "options": { "raw": { "language": "json" } } }, "url": "{{baseUrl}}/users" }
+        },
+        {
+          "name": "POST /users - duplicate email returns 409",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["const body = pm.response.json();", "pm.test('Status is 409 Conflict', () => pm.response.to.have.status(409));", "pm.test('Error response contains a message', () => pm.expect(body.message).to.exist);", "pm.test('Response time is within target', () => pm.expect(pm.response.responseTime).to.be.below(Number(pm.environment.get('maxResponseTimeMs') || 3000)));" ] } }],
+          "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"name\": \"Duplicate Test User\",\n  \"email\": \"{{testCrudUserEmail}}\",\n  \"role\": \"Member\",\n  \"status\": \"Active\",\n  \"password\": \"Postman-test-Password-2026\"\n}", "options": { "raw": { "language": "json" } } }, "url": "{{baseUrl}}/users" }
+        },
+        {
+          "name": "POST /users - malformed email returns 400",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["const body = pm.response.json();", "pm.test('Status is 400 Bad Request', () => pm.response.to.have.status(400));", "pm.test('Validation error is described', () => pm.expect(body.message).to.exist);", "pm.test('Response time is within target', () => pm.expect(pm.response.responseTime).to.be.below(Number(pm.environment.get('maxResponseTimeMs') || 3000)));" ] } }],
+          "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"name\": \"Invalid Test User\",\n  \"email\": \"not-an-email\",\n  \"role\": \"Member\",\n  \"status\": \"Active\",\n  \"password\": \"Postman-test-Password-2026\"\n}", "options": { "raw": { "language": "json" } } }, "url": "{{baseUrl}}/users" }
+        },
+        {
+          "name": "PATCH /users/{id} - update test user",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["const body = pm.response.json();", "pm.test('Status is 200 OK', () => pm.response.to.have.status(200));", "pm.test('Updated fields are returned', () => { pm.expect(body.id).to.eql(pm.environment.get('testCrudUserId')); pm.expect(body.name).to.eql('Postman Updated User'); pm.expect(body.role).to.eql('Admin'); });", "pm.test('Password data is not returned', () => pm.expect(body).not.to.have.property('passwordHash'));", "pm.test('Response time is within target', () => pm.expect(pm.response.responseTime).to.be.below(Number(pm.environment.get('maxResponseTimeMs') || 3000)));" ] } }],
+          "request": { "method": "PATCH", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"name\": \"Postman Updated User\",\n  \"role\": \"Admin\"\n}", "options": { "raw": { "language": "json" } } }, "url": "{{baseUrl}}/users/{{testCrudUserId}}" }
+        },
+        {
+          "name": "PATCH /users/{id} - malformed email returns 400",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["const body = pm.response.json();", "pm.test('Status is 400 Bad Request', () => pm.response.to.have.status(400));", "pm.test('Validation error is described', () => pm.expect(body.message).to.exist);", "pm.test('Response time is within target', () => pm.expect(pm.response.responseTime).to.be.below(Number(pm.environment.get('maxResponseTimeMs') || 3000)));" ] } }],
+          "request": { "method": "PATCH", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"email\": \"not-an-email\"\n}", "options": { "raw": { "language": "json" } } }, "url": "{{baseUrl}}/users/{{testCrudUserId}}" }
+        },
+        {
+          "name": "PATCH /users/{id} - unknown UUID returns 404",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["const body = pm.response.json();", "pm.test('Status is 404 Not Found', () => pm.response.to.have.status(404));", "pm.test('Error response contains a message', () => pm.expect(body.message).to.exist);", "pm.test('Response time is within target', () => pm.expect(pm.response.responseTime).to.be.below(Number(pm.environment.get('maxResponseTimeMs') || 3000)));" ] } }],
+          "request": { "method": "PATCH", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"name\": \"Nobody\"\n}", "options": { "raw": { "language": "json" } } }, "url": "{{baseUrl}}/users/00000000-0000-4000-8000-000000000000" }
+        },
+        {
+          "name": "DELETE /users - empty ids returns 400",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["const body = pm.response.json();", "pm.test('Status is 400 Bad Request', () => pm.response.to.have.status(400));", "pm.test('Validation error is described', () => pm.expect(body.message).to.exist);", "pm.test('Response time is within target', () => pm.expect(pm.response.responseTime).to.be.below(Number(pm.environment.get('maxResponseTimeMs') || 3000)));" ] } }],
+          "request": { "method": "DELETE", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"ids\": []\n}", "options": { "raw": { "language": "json" } } }, "url": "{{baseUrl}}/users" }
+        },
+        {
+          "name": "DELETE /users - malformed UUID returns 400",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["const body = pm.response.json();", "pm.test('Status is 400 Bad Request', () => pm.response.to.have.status(400));", "pm.test('Validation error is described', () => pm.expect(body.message).to.exist);", "pm.test('Response time is within target', () => pm.expect(pm.response.responseTime).to.be.below(Number(pm.environment.get('maxResponseTimeMs') || 3000)));" ] } }],
+          "request": { "method": "DELETE", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"ids\": [\"not-a-uuid\"]\n}", "options": { "raw": { "language": "json" } } }, "url": "{{baseUrl}}/users" }
+        },
+        {
+          "name": "DELETE /users - clean up Postman-created users",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["const body = pm.response.json();", "pm.test('Status is 200 OK', () => pm.response.to.have.status(200));", "pm.test('Both disposable users were deleted', () => pm.expect(body.deleted).to.eql(2));", "pm.test('Response time is within target', () => pm.expect(pm.response.responseTime).to.be.below(Number(pm.environment.get('maxResponseTimeMs') || 3000)));", "pm.environment.unset('testSignupUserId');", "pm.environment.unset('testSignupEmail');", "pm.environment.unset('testCrudUserId');", "pm.environment.unset('testCrudUserEmail');"] } }],
+          "request": { "method": "DELETE", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"ids\": [\"{{testSignupUserId}}\", \"{{testCrudUserId}}\"]\n}", "options": { "raw": { "language": "json" } } }, "url": "{{baseUrl}}/users" }
+        }
+      ]
+    },
+    {
+      "name": "Companies - CRUD and validation",
+      "item": [
+        {
+          "name": "POST /companies - create disposable test company",
+          "event": [
+            { "listen": "prerequest", "script": { "type": "text/javascript", "exec": ["pm.environment.set('testCompanyCode', `PMTEST${Date.now()}`);"] } },
+            { "listen": "test", "script": { "type": "text/javascript", "exec": ["const body = pm.response.json();", "pm.test('Status is 201 Created', () => pm.response.to.have.status(201));", "pm.test('Created company has the submitted data', () => { pm.expect(body.companyCode).to.eql(pm.environment.get('testCompanyCode')); pm.expect(body.companyName).to.eql('Postman Test Company'); pm.expect(body.level).to.eql(2); });", "pm.test('Response time is within target', () => pm.expect(pm.response.responseTime).to.be.below(Number(pm.environment.get('maxResponseTimeMs') || 3000)));", "pm.environment.set('testCompanyCode', body.companyCode);"] } }
+          ],
+          "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"companyCode\": \"{{testCompanyCode}}\",\n  \"companyName\": \"Postman Test Company\",\n  \"level\": 2,\n  \"country\": \"United Kingdom\",\n  \"city\": \"London\",\n  \"foundedYear\": 2020,\n  \"annualRevenue\": 100000,\n  \"employees\": 25\n}", "options": { "raw": { "language": "json" } } }, "url": "{{baseUrl}}/companies" }
+        },
+        {
+          "name": "POST /companies - duplicate code returns 409",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["const body = pm.response.json();", "pm.test('Status is 409 Conflict', () => pm.response.to.have.status(409));", "pm.test('Error response contains a message', () => pm.expect(body.message).to.exist);", "pm.test('Response time is within target', () => pm.expect(pm.response.responseTime).to.be.below(Number(pm.environment.get('maxResponseTimeMs') || 3000)));" ] } }],
+          "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"companyCode\": \"{{testCompanyCode}}\",\n  \"companyName\": \"Duplicate Test Company\",\n  \"level\": 2,\n  \"country\": \"United Kingdom\",\n  \"city\": \"London\",\n  \"foundedYear\": 2020,\n  \"annualRevenue\": 100000,\n  \"employees\": 25\n}", "options": { "raw": { "language": "json" } } }, "url": "{{baseUrl}}/companies" }
+        },
+        {
+          "name": "POST /companies - invalid level returns 400",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["const body = pm.response.json();", "pm.test('Status is 400 Bad Request', () => pm.response.to.have.status(400));", "pm.test('Validation error is described', () => pm.expect(body.message).to.exist);", "pm.test('Response time is within target', () => pm.expect(pm.response.responseTime).to.be.below(Number(pm.environment.get('maxResponseTimeMs') || 3000)));" ] } }],
+          "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"companyCode\": \"INVALIDLEVEL\",\n  \"companyName\": \"Invalid Level Company\",\n  \"level\": 5,\n  \"country\": \"United Kingdom\",\n  \"city\": \"London\",\n  \"foundedYear\": 2020,\n  \"annualRevenue\": 100000,\n  \"employees\": 25\n}", "options": { "raw": { "language": "json" } } }, "url": "{{baseUrl}}/companies" }
+        },
+        {
+          "name": "PATCH /companies/{companyCode} - update test company",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["const body = pm.response.json();", "pm.test('Status is 200 OK', () => pm.response.to.have.status(200));", "pm.test('Updated fields are returned', () => { pm.expect(body.companyCode).to.eql(pm.environment.get('testCompanyCode')); pm.expect(body.companyName).to.eql('Postman Updated Company'); pm.expect(body.employees).to.eql(30); });", "pm.test('Response time is within target', () => pm.expect(pm.response.responseTime).to.be.below(Number(pm.environment.get('maxResponseTimeMs') || 3000)));" ] } }],
+          "request": { "method": "PATCH", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"companyName\": \"Postman Updated Company\",\n  \"employees\": 30\n}", "options": { "raw": { "language": "json" } } }, "url": "{{baseUrl}}/companies/{{testCompanyCode}}" }
+        },
+        {
+          "name": "PATCH /companies/{companyCode} - unknown code returns 404",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["const body = pm.response.json();", "pm.test('Status is 404 Not Found', () => pm.response.to.have.status(404));", "pm.test('Error response contains a message', () => pm.expect(body.message).to.exist);", "pm.test('Response time is within target', () => pm.expect(pm.response.responseTime).to.be.below(Number(pm.environment.get('maxResponseTimeMs') || 3000)));" ] } }],
+          "request": { "method": "PATCH", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"companyName\": \"Nobody\"\n}", "options": { "raw": { "language": "json" } } }, "url": "{{baseUrl}}/companies/PMTEST_DOES_NOT_EXIST" }
+        },
+        {
+          "name": "DELETE /companies/{companyCode} - delete test company",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["const body = pm.response.json();", "pm.test('Status is 200 OK', () => pm.response.to.have.status(200));", "pm.test('Deletion is confirmed', () => pm.expect(body.deleted).to.eql(true));", "pm.test('Response time is within target', () => pm.expect(pm.response.responseTime).to.be.below(Number(pm.environment.get('maxResponseTimeMs') || 3000)));", "pm.environment.unset('testCompanyCode');"] } }],
+          "request": { "method": "DELETE", "header": [{ "key": "Accept", "value": "application/json" }], "url": "{{baseUrl}}/companies/{{testCompanyCode}}" }
+        },
+        {
+          "name": "DELETE /companies/{companyCode} - deleted code returns 404",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["const body = pm.response.json();", "pm.test('Status is 404 Not Found', () => pm.response.to.have.status(404));", "pm.test('Error response contains a message', () => pm.expect(body.message).to.exist);", "pm.test('Response time is within target', () => pm.expect(pm.response.responseTime).to.be.below(Number(pm.environment.get('maxResponseTimeMs') || 3000)));" ] } }],
+          "request": { "method": "DELETE", "header": [{ "key": "Accept", "value": "application/json" }], "url": "{{baseUrl}}/companies/PMTEST_DOES_NOT_EXIST" }
+        }
+      ]
+    }
+  ]
+}

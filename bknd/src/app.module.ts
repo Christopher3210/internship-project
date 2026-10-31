@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { AiAgentModule } from './ai-agent/ai-agent.module.js';
 import { AppController } from './app.controller.js';
 import { AppService } from './app.service.js';
 import { CompaniesModule } from './companies/companies.module.js';
@@ -26,6 +27,7 @@ import { UsersModule } from './users/users.module.js';
     UsersModule,
     CompaniesModule,
     DashboardModule,
+    AiAgentModule,
   ],
   controllers: [AppController],
   providers: [AppService],
