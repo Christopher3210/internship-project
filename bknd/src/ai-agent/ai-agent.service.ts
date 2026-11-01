@@ -13,6 +13,7 @@ import type { AiProviderName, CreateChatSessionDto, UpdateChatSessionDto } from 
 import type { SendChatMessageDto } from './dto/send-chat-message.dto.js';
 import type { AiPageQueryDto, CreateAiAuditDto, CreateAiMemoryDto, CreateAiTaskDto, UpdateAiAuditDto, UpdateAiMemoryDto, UpdateAiTaskDto } from './dto/ai-resource.dto.js';
 import { AiModelService } from './ai-model.service.js';
+import { AiAgentToolsService } from './ai-agent-tools.service.js';
 
 const SESSION_TTL_SECONDS = 2 * 60 * 60;
 const CHAT_CACHE_TTL_SECONDS = 10 * 60;
@@ -27,6 +28,7 @@ export class AiAgentService {
     @InjectRepository(AiOperationAudit) private readonly audits: Repository<AiOperationAudit>,
     @InjectRepository(User) private readonly users: Repository<User>,
     private readonly aiModelService: AiModelService,
+    private readonly agentTools: AiAgentToolsService,
     private readonly redis: AiRedisService,
   ) {}
 
@@ -103,11 +105,15 @@ export class AiAgentService {
     const modelContext = [...(cachedContext ?? session.messages.slice(-20)), userMessage].slice(-20);
     const provider = (session.provider || this.aiModelService.getDefaultProvider()) as AiProviderName;
     const promptIdentity = modelContext.map(({ role, content, attachments }) => ({ role, content, attachments }));
-    const digest = createHash('sha256').update(JSON.stringify({ provider, model: session.model, messages: promptIdentity })).digest('hex');
+    const digest = createHash('sha256').update(JSON.stringify({ provider, model: session.model, toolVersion: 'company-summary-v1', messages: promptIdentity })).digest('hex');
     const cacheKey = `ai:chat_cache:${ownerId}:${digest}`;
     let reply = await this.redis.get<{ content: string; model: string }>(cacheKey);
     if (!reply) {
-      reply = await this.aiModelService.generateReply(provider, modelContext);
+      reply = await this.aiModelService.generateReply(provider, modelContext, async (toolName, args) => {
+        const result = await this.agentTools.execute(toolName, args);
+        await this.writeAudit(actor.id, 'agent.tool.invoke', toolName, null, { toolName });
+        return result;
+      });
       await this.redis.set(cacheKey, reply, CHAT_CACHE_TTL_SECONDS);
     }
     const assistantMessage: AiChatMessage = { id: randomUUID(), role: 'assistant', content: reply.content, createdAt: new Date().toISOString() };

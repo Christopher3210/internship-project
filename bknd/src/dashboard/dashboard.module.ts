@@ -8,5 +8,6 @@ import { DashboardService } from './dashboard.service.js';
   imports: [TypeOrmModule.forFeature([Company])],
   controllers: [DashboardController],
   providers: [DashboardService],
+  exports: [DashboardService],
 })
 export class DashboardModule {}

@@ -2,6 +2,10 @@ import { BadGatewayException, Injectable, ServiceUnavailableException } from '@n
 import { ConfigService } from '@nestjs/config';
 import type { AiChatMessage } from './ai-chat-session.entity.js';
 import type { AiProviderName } from './dto/create-chat-session.dto.js';
+import { AiAgentToolsService } from './ai-agent-tools.service.js';
+
+type ToolExecutor = (name: string, args: Record<string, unknown>) => Promise<unknown>;
+type ModelToolCall = { id: string; type: 'function'; function: { name: string; arguments: string } };
 
 type ProviderConfig = {
   id: AiProviderName;
@@ -22,7 +26,10 @@ const providerSettings: Record<Exclude<AiProviderName, 'mock'>, { label: string;
 
 @Injectable()
 export class AiModelService {
-  constructor(private readonly config: ConfigService) {}
+  constructor(
+    private readonly config: ConfigService,
+    private readonly tools: AiAgentToolsService,
+  ) {}
 
   getDefaultProvider(): AiProviderName {
     const requested = this.config.get<string>('AI_PROVIDER') ?? 'mock';
@@ -52,12 +59,19 @@ export class AiModelService {
     return { id: config.id, label: config.label, model: config.model, configured: config.configured };
   }
 
-  async generateReply(provider: AiProviderName, messages: AiChatMessage[]) {
+  async generateReply(provider: AiProviderName, messages: AiChatMessage[], toolExecutor?: ToolExecutor) {
     const providerConfig = this.getProviders().find((item) => item.id === provider);
     if (!providerConfig) throw new ServiceUnavailableException('AI provider is not supported');
 
     const latest = messages[messages.length - 1];
     if (provider === 'mock') {
+      if (toolExecutor && /公司|company/i.test(latest.content) && /多少|数量|总数|count|how many/i.test(latest.content)) {
+        const summary = await toolExecutor('get_company_summary', {}) as { companyCount: number; totalRevenue: number; countryCount: number; employeeCount: number };
+        return {
+          content: `我调用了项目的公司统计工具，当前有 ${summary.companyCount.toLocaleString()} 家公司，覆盖 ${summary.countryCount.toLocaleString()} 个国家/地区，共有 ${summary.employeeCount.toLocaleString()} 名员工。`,
+          model: providerConfig.model,
+        };
+      }
       const attachmentNote = latest.attachments?.length ? `（收到附件：${latest.attachments.map((file) => file.name).join('、')}）` : '';
       const text = latest.attachments?.map((file) => file.textContent).filter(Boolean).join('\n\n') ?? '';
       const answer = text
@@ -70,33 +84,71 @@ export class AiModelService {
       throw new ServiceUnavailableException(`${providerConfig.label} is not configured; set its API key and base URL in the backend environment`);
     }
 
-    const apiMessages = messages.map((message) => {
+    const apiMessages: Array<Record<string, unknown>> = [{
+      role: 'system',
+      content: '你是供应链管理系统的 AI 助手。需要回答当前公司的数量、收入、国家覆盖或员工统计时，必须调用 get_company_summary 获取实时数据，不要猜测或编造。只使用提供的只读工具。',
+    }, ...messages.map((message) => {
       const attachmentText = message.attachments?.map((file) => file.textContent ? `\n\n[Attachment: ${file.name}]\n${file.textContent}` : `[Attachment: ${file.name}; content is not available to the model]`).join('') ?? '';
       return { role: message.role, content: `${message.content}${attachmentText}` };
-    });
+    })];
     const endpoint = providerConfig.baseUrl.replace(/\/$/, '').endsWith('/chat/completions')
       ? providerConfig.baseUrl
       : `${providerConfig.baseUrl.replace(/\/$/, '')}/chat/completions`;
 
-    let response: Response;
-    try {
-      response = await fetch(endpoint, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(providerConfig.apiKey ? { Authorization: `Bearer ${providerConfig.apiKey}` } : {}),
-        },
-        body: JSON.stringify({ model: providerConfig.model, messages: apiMessages, stream: false }),
-        signal: AbortSignal.timeout(60_000),
-      });
-    } catch {
-      throw new BadGatewayException('Could not connect to the configured AI provider');
-    }
-    if (!response.ok) throw new BadGatewayException(`AI provider returned HTTP ${response.status}`);
+    const runTool = toolExecutor ?? ((name: string) => this.tools.execute(name));
+    const toolDefinitions = this.tools.getDefinitions();
 
-    const result = await response.json() as { choices?: Array<{ message?: { content?: string | null } }> };
-    const content = result.choices?.[0]?.message?.content;
-    if (typeof content !== 'string' || !content.trim()) throw new BadGatewayException('AI provider returned an empty response');
-    return { content, model: providerConfig.model };
+    for (let round = 0; round < 3; round += 1) {
+      let response: Response;
+      try {
+        response = await fetch(endpoint, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(providerConfig.apiKey ? { Authorization: `Bearer ${providerConfig.apiKey}` } : {}),
+          },
+          body: JSON.stringify({
+            model: providerConfig.model,
+            messages: apiMessages,
+            stream: false,
+            tools: toolDefinitions,
+            tool_choice: 'auto',
+          }),
+          signal: AbortSignal.timeout(60_000),
+        });
+      } catch {
+        throw new BadGatewayException('Could not connect to the configured AI provider');
+      }
+      if (!response.ok) throw new BadGatewayException(`AI provider returned HTTP ${response.status}`);
+
+      const result = await response.json() as { choices?: Array<{ message?: { content?: string | null; tool_calls?: ModelToolCall[] } }> };
+      const message = result.choices?.[0]?.message;
+      const toolCalls = message?.tool_calls ?? [];
+      if (!toolCalls.length) {
+        const content = message?.content;
+        if (typeof content !== 'string' || !content.trim()) throw new BadGatewayException('AI provider returned an empty response');
+        return { content, model: providerConfig.model };
+      }
+
+      if (round === 2) throw new BadGatewayException('AI provider exceeded the tool-call limit');
+      apiMessages.push({ role: 'assistant', content: message?.content ?? null, tool_calls: toolCalls });
+      for (const call of toolCalls) {
+        let args: Record<string, unknown> = {};
+        try {
+          const parsed = JSON.parse(call.function.arguments || '{}') as unknown;
+          if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) args = parsed as Record<string, unknown>;
+        } catch {
+          apiMessages.push({ role: 'tool', tool_call_id: call.id, content: JSON.stringify({ error: 'Tool arguments must be valid JSON' }) });
+          continue;
+        }
+        try {
+          const toolResult = await runTool(call.function.name, args);
+          apiMessages.push({ role: 'tool', tool_call_id: call.id, content: JSON.stringify(toolResult) });
+        } catch {
+          apiMessages.push({ role: 'tool', tool_call_id: call.id, content: JSON.stringify({ error: 'The requested project tool could not be completed' }) });
+        }
+      }
+    }
+    throw new BadGatewayException('AI provider did not return a final response');
   }
 }
