@@ -16,6 +16,7 @@ import { DashboardModule } from '../dashboard/dashboard.module.js';
 import { CompaniesModule } from '../companies/companies.module.js';
 import { AiAgentToolsService } from './ai-agent-tools.service.js';
 import { AiAgentTaskExecutionService } from './ai-agent-task-execution.service.js';
+import { AiAgentMemoryService } from './ai-agent-memory.service.js';
 
 @Module({
   imports: [
@@ -28,6 +29,6 @@ import { AiAgentTaskExecutionService } from './ai-agent-task-execution.service.j
     }),
   ],
   controllers: [AiAgentController],
-  providers: [AiAgentService, AiModelService, AiAgentToolsService, AiAgentTaskExecutionService, AiJwtAuthGuard, AiRedisService],
+  providers: [AiAgentService, AiModelService, AiAgentToolsService, AiAgentTaskExecutionService, AiAgentMemoryService, AiJwtAuthGuard, AiRedisService],
 })
 export class AiAgentModule {}

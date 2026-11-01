@@ -3,6 +3,7 @@ import { CompaniesService } from '../companies/companies.service.js';
 import { DashboardService } from '../dashboard/dashboard.service.js';
 import { AiAgentTaskExecutionService } from './ai-agent-task-execution.service.js';
 import type { AiAuthenticatedUser } from './ai-current-user.js';
+import { AiAgentMemoryService } from './ai-agent-memory.service.js';
 
 /** A small allowlist of read-only project operations available to the model. */
 @Injectable()
@@ -11,6 +12,7 @@ export class AiAgentToolsService {
     private readonly dashboardService: DashboardService,
     private readonly companiesService: CompaniesService,
     private readonly taskExecution: AiAgentTaskExecutionService,
+    private readonly memory: AiAgentMemoryService,
   ) {}
 
   getDefinitions() {
@@ -36,6 +38,43 @@ export class AiAgentToolsService {
               level: { type: 'integer', enum: [1, 2, 3, 4], description: 'Optional supplier level.' },
               limit: { type: 'integer', minimum: 1, maximum: 10, description: 'Maximum number of results; defaults to 5.' },
             },
+            additionalProperties: false,
+          },
+        },
+      },
+      {
+        type: 'function' as const,
+        function: {
+          name: 'list_my_memories',
+          description: 'List saved memories belonging to the authenticated user. Use this when the user asks what you remember.',
+          parameters: { type: 'object', properties: {}, additionalProperties: false },
+        },
+      },
+      {
+        type: 'function' as const,
+        function: {
+          name: 'remember_user_preference',
+          description: 'Save or update a short user preference or fact only when the user explicitly asks you to remember it. Never store passwords, API keys, secrets, or access tokens.',
+          parameters: {
+            type: 'object',
+            properties: {
+              key: { type: 'string', minLength: 1, maxLength: 120, description: 'Short stable category, such as preferred_language or response_style.' },
+              value: { type: 'string', minLength: 1, maxLength: 500, description: 'The preference or fact the user explicitly asked to remember.' },
+            },
+            required: ['key', 'value'],
+            additionalProperties: false,
+          },
+        },
+      },
+      {
+        type: 'function' as const,
+        function: {
+          name: 'forget_user_memory',
+          description: 'Delete one saved memory by its exact key when the authenticated user asks you to forget it.',
+          parameters: {
+            type: 'object',
+            properties: { key: { type: 'string', minLength: 1, maxLength: 120 } },
+            required: ['key'],
             additionalProperties: false,
           },
         },
@@ -116,6 +155,22 @@ export class AiAgentToolsService {
     if (name === 'list_my_tasks') {
       if (!actor) throw new Error('An authenticated user is required to list tasks');
       return this.taskExecution.listRecentTasks(actor.id);
+    }
+    if (name === 'list_my_memories') {
+      if (!actor) throw new Error('An authenticated user is required to list memories');
+      return this.memory.listOwn(actor.id);
+    }
+    if (name === 'remember_user_preference') {
+      if (!actor) throw new Error('An authenticated user is required to save a memory');
+      const key = typeof args.key === 'string' ? args.key : '';
+      const value = typeof args.value === 'string' ? args.value : '';
+      return this.memory.remember(actor.id, key, value);
+    }
+    if (name === 'forget_user_memory') {
+      if (!actor) throw new Error('An authenticated user is required to delete a memory');
+      const key = typeof args.key === 'string' ? args.key : '';
+      if (!key.trim()) throw new Error('Provide the exact memory key to forget.');
+      return this.memory.forget(actor.id, key);
     }
     if (name === 'set_task_progress') {
       if (!actor) throw new Error('An authenticated user is required to update a task');
