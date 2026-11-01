@@ -85,6 +85,19 @@ export class CompaniesService implements OnModuleInit {
     return { items, total, page: currentPage, pageSize: currentPageSize };
   }
 
+  async searchForAgent(filters: { name?: string; country?: string; levels?: number[]; limit: number }) {
+    const query = this.companiesRepository.createQueryBuilder('company');
+    if (filters.name) query.andWhere('company.companyName ILIKE :name', { name: `%${filters.name}%` });
+    if (filters.country) query.andWhere('company.country ILIKE :country', { country: `%${filters.country}%` });
+    if (filters.levels?.length) query.andWhere('company.level IN (:...levels)', { levels: filters.levels });
+    const [items, total] = await query
+      .orderBy('company.level', 'ASC')
+      .addOrderBy('company.companyCode', 'ASC')
+      .take(filters.limit)
+      .getManyAndCount();
+    return { items, total };
+  }
+
   async findOneByCodeOrExactName(identifier: string) {
     return this.companiesRepository.createQueryBuilder('company')
       .where('company.companyCode = :identifier', { identifier })

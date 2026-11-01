@@ -27,11 +27,12 @@ export class AiAgentToolsService {
         type: 'function' as const,
         function: {
           name: 'search_companies',
-          description: 'Search for companies by part of their name and/or supplier level (1 to 4). At least one filter is required. Return at most 10 matching companies.',
+          description: 'Search for companies by name, country, and/or supplier level (1 to 4). Combine filters when requested (for example, Japanese level 2 suppliers means country Japan and level 2). At least one filter is required. Return at most 10 matching companies.',
           parameters: {
             type: 'object',
             properties: {
               name: { type: 'string', description: 'Optional partial company name to search for.' },
+              country: { type: 'string', description: 'Optional country name, preferably in the same language used in the database (e.g. Japan, USA, China).' },
               level: { type: 'integer', enum: [1, 2, 3, 4], description: 'Optional supplier level.' },
               limit: { type: 'integer', minimum: 1, maximum: 10, description: 'Maximum number of results; defaults to 5.' },
             },
@@ -63,14 +64,23 @@ export class AiAgentToolsService {
     }
     if (name === 'search_companies') {
       const queryName = typeof args.name === 'string' ? args.name.trim() : '';
+      let country = typeof args.country === 'string' ? args.country.trim() : '';
+      const countryAliases: Record<string, string> = { '日本': 'Japan', '美国': 'USA', '美國': 'USA', '中国': 'China', '中國': 'China', '英国': 'UK', '英國': 'UK' };
+      country = countryAliases[country] ?? country;
       const rawLevel = args.level;
       const level = rawLevel === undefined || rawLevel === null ? undefined : Number(rawLevel);
-      if (!queryName && level === undefined) throw new Error('Provide a company name or supplier level to search');
+      if (!queryName && !country && level === undefined) throw new Error('Provide a company name, country, or supplier level to search');
       if (queryName.length > 120) throw new Error('Company name filter is too long');
+      if (country.length > 100) throw new Error('Country filter is too long');
       if (level !== undefined && (!Number.isInteger(level) || level < 1 || level > 4)) throw new Error('Supplier level must be between 1 and 4');
       const requestedLimit = Number(args.limit ?? 5);
       const limit = Number.isInteger(requestedLimit) ? Math.max(1, Math.min(10, requestedLimit)) : 5;
-      const result = await this.companiesService.findAll(queryName || undefined, level?.toString(), '1', limit.toString());
+      const result = await this.companiesService.searchForAgent({
+        ...(queryName ? { name: queryName } : {}),
+        ...(country ? { country } : {}),
+        ...(level !== undefined ? { levels: [level] } : {}),
+        limit,
+      });
       return {
         total: result.total,
         returned: result.items.length,

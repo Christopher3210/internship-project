@@ -41,6 +41,14 @@ function readTaskSummary(result: unknown) {
   return typeof result.summary === 'string' ? result.summary : null;
 }
 
+function progressDescription(task: AiTask) {
+  if (task.status === 'queued') return 'Waiting to start';
+  if (task.status === 'failed') return 'Task failed';
+  if (task.status === 'completed') return 'Task finished';
+  if (task.taskType === 'company_profile_summary') return task.progress < 60 ? 'Looking up company data' : 'Preparing the summary';
+  return 'Task is running';
+}
+
 export default function AgentTasksPage() {
   const [tasks, setTasks] = useState<AiTask[]>([]);
   const [loading, setLoading] = useState(true);
@@ -123,7 +131,7 @@ export default function AgentTasksPage() {
 
   return <DashboardShell title="Agent Tasks">
     <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" alignItems={{ sm: 'center' }} gap={1} sx={{ mb: 2 }}>
-      <Typography color="text.secondary">Your saved AI task records and progress. Task records are stored with your account.</Typography>
+      <Typography color="text.secondary">Your saved AI task records and progress. Progress reflects completed processing stages, not elapsed time; short lookups may finish quickly.</Typography>
       <Stack direction="row" gap={1}>
         <Button startIcon={<Refresh />} onClick={() => void loadTasks()} disabled={loading}>Refresh</Button>
         <Button variant="contained" startIcon={<Add />} onClick={() => setDialogOpen(true)}>New task</Button>
@@ -144,7 +152,7 @@ export default function AgentTasksPage() {
             }} sx={{ minWidth: 140 }} inputProps={{ 'aria-label': `Status for ${task.taskType}` }}>
               {(Object.keys(statusLabel) as TaskStatus[]).map((status) => <MenuItem key={status} value={status}><Chip size="small" label={statusLabel[status]} color={statusColor[status]} /></MenuItem>)}
             </TextField>}</TableCell>
-            <TableCell><Stack direction="row" alignItems="center" gap={1}><Box sx={{ flex: 1 }}><LinearProgress variant="determinate" value={task.progress} sx={{ borderRadius: 1 }} /></Box><Typography variant="caption" sx={{ minWidth: 34 }}>{task.progress}%</Typography></Stack>
+            <TableCell><Stack direction="row" alignItems="center" gap={1}><Box sx={{ flex: 1 }}><LinearProgress variant="determinate" value={task.progress} sx={{ borderRadius: 1 }} /></Box><Typography variant="caption" sx={{ minWidth: 34 }}>{task.progress}%</Typography></Stack><Typography variant="caption" color="text.secondary">{progressDescription(task)}</Typography>
               {task.status === 'running' && task.taskType !== 'company_profile_summary' && <Stack direction="row" gap={0.5} sx={{ mt: 0.5 }}>{[25, 50, 75].filter((value) => value > task.progress).map((value) => <Button key={value} size="small" onClick={() => void updateTask(task.id, { progress: value })}>{value}%</Button>)}</Stack>}
             </TableCell>
             <TableCell>{formatDate(task.updatedAt)}{readTaskSummary(task.result) && <Typography variant="body2" sx={{ mt: 0.75, maxWidth: 360 }}>{readTaskSummary(task.result)}</Typography>}</TableCell>
