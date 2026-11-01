@@ -91,7 +91,7 @@ export class AiAgentToolsService {
         type: 'function' as const,
         function: {
           name: 'set_task_progress',
-          description: 'Set the progress of one of the authenticated user\'s queued or running tasks. Completed or failed tasks cannot be changed; use only a taskId returned by list_my_tasks or shown in the conversation.',
+          description: 'Set progress only on a manually tracked queued or running task belonging to the authenticated user. Automated company search and company summary tasks are execution-managed and cannot be manually adjusted.',
           parameters: {
             type: 'object',
             properties: {

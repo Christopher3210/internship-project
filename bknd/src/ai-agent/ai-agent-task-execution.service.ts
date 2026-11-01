@@ -68,6 +68,7 @@ export class AiAgentTaskExecutionService {
       taskType: task.taskType,
       status: task.status,
       progress: task.progress,
+      manualProgressAllowed: task.taskType !== 'company_profile_summary' && task.taskType !== 'company_search',
       description: typeof task.input?.description === 'string' ? task.input.description : undefined,
       updatedAt: task.updatedAt,
     }));
@@ -79,6 +80,9 @@ export class AiAgentTaskExecutionService {
     }
     const task = await this.tasks.findOne({ where: { id: taskId }, relations: { owner: true } });
     if (!task || task.owner.id !== userId) throw new Error('Task was not found for this user.');
+    if (task.taskType === 'company_profile_summary' || task.taskType === 'company_search') {
+      throw new Error('This task is execution-managed; its progress reflects real processing stages and cannot be set manually.');
+    }
     if (task.status === 'completed' || task.status === 'failed') {
       throw new Error(`This task is already ${task.status}; its progress cannot be changed.`);
     }

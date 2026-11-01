@@ -82,4 +82,10 @@ describe('AiAgentTaskExecutionService task tools', () => {
     const { service } = makeService(makeTask());
     await expect(service.setTaskProgress('task-a', 'user-a', 100)).rejects.toThrow('from 0 to 99');
   });
+
+  it('does not allow manual progress changes on execution-managed tasks', async () => {
+    const { service } = makeService(makeTask({ taskType: 'company_search', status: 'running', progress: 75 }));
+
+    await expect(service.setTaskProgress('task-a', 'user-a', 50)).rejects.toThrow('execution-managed');
+  });
 });

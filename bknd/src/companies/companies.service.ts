@@ -100,8 +100,8 @@ export class CompaniesService implements OnModuleInit {
 
   async findOneByCodeOrExactName(identifier: string) {
     return this.companiesRepository.createQueryBuilder('company')
-      .where('company.companyCode = :identifier', { identifier })
-      .orWhere('company.companyName ILIKE :identifier', { identifier })
+      .where('LOWER(company.companyCode) = LOWER(:identifier)', { identifier })
+      .orWhere('LOWER(company.companyName) = LOWER(:identifier)', { identifier })
       .getOne();
   }
 

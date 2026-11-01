@@ -109,7 +109,7 @@ export class AiAgentService {
     const memoryContext = savedMemories.length ? JSON.stringify(savedMemories).slice(0, 6_000) : '';
     const provider = (session.provider || this.aiModelService.getDefaultProvider()) as AiProviderName;
     const promptIdentity = modelContext.map(({ role, content, attachments }) => ({ role, content, attachments }));
-    const digest = createHash('sha256').update(JSON.stringify({ provider, model: session.model, toolVersion: 'company-search-task-v7', memoryContext, messages: promptIdentity })).digest('hex');
+    const digest = createHash('sha256').update(JSON.stringify({ provider, model: session.model, toolVersion: 'company-search-task-v8', memoryContext, messages: promptIdentity })).digest('hex');
     const cacheKey = `ai:chat_cache:${ownerId}:${digest}`;
     let reply = await this.redis.get<{ content: string; model: string }>(cacheKey);
     if (!reply) {
