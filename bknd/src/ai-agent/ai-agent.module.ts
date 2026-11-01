@@ -13,12 +13,14 @@ import { AiAgentService } from './ai-agent.service.js';
 import { AiModelService } from './ai-model.service.js';
 import { User } from '../users/user.entity.js';
 import { DashboardModule } from '../dashboard/dashboard.module.js';
+import { CompaniesModule } from '../companies/companies.module.js';
 import { AiAgentToolsService } from './ai-agent-tools.service.js';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([AiChatSession, AiUserMemory, AiTaskRecord, AiOperationAudit, User]),
     DashboardModule,
+    CompaniesModule,
     JwtModule.registerAsync({
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({ secret: config.getOrThrow<string>('JWT_SECRET') }),

@@ -72,6 +72,27 @@ export class AiModelService {
           model: providerConfig.model,
         };
       }
+      if (toolExecutor && /公司|company|供应商|supplier/i.test(latest.content) && /查询|查找|搜索|找一下|search|find/i.test(latest.content)) {
+        const levelMatch = latest.content.match(/(?:level|等级|层级|L)\s*[:：]?\s*([1-4])|第\s*([1-4])\s*级/i);
+        const quotedName = latest.content.match(/["“'‘]([^"”'’]+)["”'’]/)?.[1];
+        const extractedName = latest.content
+          .replace(/(?:level|等级|层级|L)\s*[:：]?\s*[1-4]|第\s*[1-4]\s*级/gi, ' ')
+          .replace(/请|帮我|查询|查找|搜索|找一下|查一下|搜一下|一下|公司名称|公司名|公司信息|公司资料|公司数据|公司|供应商|有哪些|所有|全部|的|search|find|company|companies|supplier/gi, ' ')
+          .replace(/[？！?。，,.：:]/g, ' ')
+          .trim();
+        const name = quotedName?.trim() || (levelMatch ? '' : extractedName);
+        const level = Number(levelMatch?.[1] ?? levelMatch?.[2]);
+        const result = await toolExecutor('search_companies', {
+          ...(name ? { name } : {}),
+          ...(levelMatch ? { level } : {}),
+          limit: 5,
+        }) as { total: number; items: Array<{ companyName: string; companyCode: string; level: number; country: string; city: string }> };
+        const rows = result.items.map((item) => `${item.companyName}（${item.companyCode}），Level ${item.level}，${item.country} ${item.city}`).join('\n');
+        return {
+          content: `我调用了公司搜索工具，共找到 ${result.total} 家，展示 ${result.items.length} 条：\n${rows || '没有匹配结果。'}`,
+          model: providerConfig.model,
+        };
+      }
       const attachmentNote = latest.attachments?.length ? `（收到附件：${latest.attachments.map((file) => file.name).join('、')}）` : '';
       const text = latest.attachments?.map((file) => file.textContent).filter(Boolean).join('\n\n') ?? '';
       const answer = text
@@ -86,7 +107,7 @@ export class AiModelService {
 
     const apiMessages: Array<Record<string, unknown>> = [{
       role: 'system',
-      content: '你是供应链管理系统的 AI 助手。需要回答当前公司的数量、收入、国家覆盖或员工统计时，必须调用 get_company_summary 获取实时数据，不要猜测或编造。只使用提供的只读工具。',
+      content: '你是供应链管理系统的 AI 助手。回答当前公司的数量、收入、国家覆盖或员工统计时，必须调用 get_company_summary；用户查询具体公司或供应商等级时，必须调用 search_companies。只使用提供的只读工具，不要猜测或编造数据库事实。',
     }, ...messages.map((message) => {
       const attachmentText = message.attachments?.map((file) => file.textContent ? `\n\n[Attachment: ${file.name}]\n${file.textContent}` : `[Attachment: ${file.name}; content is not available to the model]`).join('') ?? '';
       return { role: message.role, content: `${message.content}${attachmentText}` };
