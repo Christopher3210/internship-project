@@ -106,6 +106,22 @@ export class AiAgentToolsService {
       {
         type: 'function' as const,
         function: {
+          name: 'start_company_search_task',
+          description: 'Create and execute a task for a company search, saving the filters and matching company records as the task result. Use this when the user asks to turn a company search into a task or save it as a task. Do not use the single-company summary task for search filters.',
+          parameters: {
+            type: 'object',
+            properties: {
+              name: { type: 'string', maxLength: 120, description: 'Optional company-name filter.' },
+              country: { type: 'string', maxLength: 100, description: 'Optional country filter, e.g. USA, Japan, China.' },
+              level: { type: 'integer', enum: [1, 2, 3, 4], description: 'Optional supplier level.' },
+            },
+            additionalProperties: false,
+          },
+        },
+      },
+      {
+        type: 'function' as const,
+        function: {
           name: 'start_company_profile_summary',
           description: 'Create an owned background task that looks up one company by exact company name or code and saves a structured profile summary to the task record.',
           parameters: {
@@ -178,6 +194,23 @@ export class AiAgentToolsService {
       const progress = Number(args.progress);
       if (!taskId) throw new Error('Provide a task ID');
       return this.taskExecution.setTaskProgress(taskId, actor.id, progress);
+    }
+    if (name === 'start_company_search_task') {
+      if (!actor) throw new Error('An authenticated user is required to create a task');
+      const companyName = typeof args.name === 'string' ? args.name.trim() : '';
+      let country = typeof args.country === 'string' ? args.country.trim() : '';
+      const countryAliases: Record<string, string> = { '日本': 'Japan', '美国': 'USA', '美國': 'USA', '中国': 'China', '中國': 'China', '英国': 'UK', '英國': 'UK' };
+      country = countryAliases[country] ?? country;
+      const rawLevel = args.level;
+      const level = rawLevel === undefined || rawLevel === null ? undefined : Number(rawLevel);
+      if (!companyName && !country && level === undefined) throw new Error('Provide at least one company search filter to create a task.');
+      if (companyName.length > 120 || country.length > 100) throw new Error('A company search filter is too long.');
+      if (level !== undefined && (!Number.isInteger(level) || level < 1 || level > 4)) throw new Error('Supplier level must be between 1 and 4.');
+      return this.taskExecution.enqueueCompanySearchTask({
+        ...(companyName ? { name: companyName } : {}),
+        ...(country ? { country } : {}),
+        ...(level !== undefined ? { level } : {}),
+      }, actor.id);
     }
     if (name === 'start_company_profile_summary') {
       const companyIdentifier = typeof args.companyIdentifier === 'string' ? args.companyIdentifier.trim() : '';

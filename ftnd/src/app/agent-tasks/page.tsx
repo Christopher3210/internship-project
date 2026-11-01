@@ -41,11 +41,27 @@ function readTaskSummary(result: unknown) {
   return typeof result.summary === 'string' ? result.summary : null;
 }
 
+function readTaskMatches(result: unknown) {
+  if (typeof result !== 'object' || result === null || !('items' in result) || !Array.isArray(result.items)) return [];
+  return result.items.flatMap((item) => {
+    if (typeof item !== 'object' || item === null || !('companyName' in item) || typeof item.companyName !== 'string') return [];
+    const code = 'companyCode' in item && typeof item.companyCode === 'string' ? ` (${item.companyCode})` : '';
+    const level = 'level' in item && typeof item.level === 'number' ? ` · Level ${item.level}` : '';
+    const location = ['city', 'country'].flatMap((key) => key in item && typeof item[key as keyof typeof item] === 'string' ? [item[key as keyof typeof item] as string] : []).join(', ');
+    return [`${item.companyName}${code}${level}${location ? ` · ${location}` : ''}`];
+  });
+}
+
+function isAutomatedTask(task: AiTask) {
+  return task.taskType === 'company_profile_summary' || task.taskType === 'company_search';
+}
+
 function progressDescription(task: AiTask) {
   if (task.status === 'queued') return 'Waiting to start';
   if (task.status === 'failed') return 'Task failed';
   if (task.status === 'completed') return 'Task finished';
   if (task.taskType === 'company_profile_summary') return task.progress < 60 ? 'Looking up company data' : 'Preparing the summary';
+  if (task.taskType === 'company_search') return task.progress < 75 ? 'Searching company records' : 'Saving search results';
   return 'Task is running';
 }
 
@@ -145,7 +161,7 @@ export default function AgentTasksPage() {
           {loading && <TableRow><TableCell colSpan={5}><Stack direction="row" alignItems="center" gap={1}><CircularProgress size={18} /><Typography>Loading tasks…</Typography></Stack></TableCell></TableRow>}
           {!loading && tasks.map((task) => <TableRow key={task.id} hover>
             <TableCell><Typography fontWeight={600}>{task.taskType}</Typography><Typography variant="caption" color="text.secondary">{task.id}</Typography>{typeof task.input.description === 'string' && <Typography variant="body2" color="text.secondary">{task.input.description}</Typography>}{task.error && <Typography variant="caption" color="error">{task.error}</Typography>}</TableCell>
-            <TableCell>{task.taskType === 'company_profile_summary' ? <Chip size="small" label={statusLabel[task.status]} color={statusColor[task.status]} /> : <TextField select size="small" value={task.status} onChange={(event) => {
+            <TableCell>{isAutomatedTask(task) ? <Chip size="small" label={statusLabel[task.status]} color={statusColor[task.status]} /> : <TextField select size="small" value={task.status} onChange={(event) => {
               const status = event.target.value as TaskStatus;
               const progress = status === 'completed' ? 100 : status === 'queued' ? 0 : task.progress;
               void updateTask(task.id, { status, progress });
@@ -153,9 +169,9 @@ export default function AgentTasksPage() {
               {(Object.keys(statusLabel) as TaskStatus[]).map((status) => <MenuItem key={status} value={status}><Chip size="small" label={statusLabel[status]} color={statusColor[status]} /></MenuItem>)}
             </TextField>}</TableCell>
             <TableCell><Stack direction="row" alignItems="center" gap={1}><Box sx={{ flex: 1 }}><LinearProgress variant="determinate" value={task.progress} sx={{ borderRadius: 1 }} /></Box><Typography variant="caption" sx={{ minWidth: 34 }}>{task.progress}%</Typography></Stack><Typography variant="caption" color="text.secondary">{progressDescription(task)}</Typography>
-              {task.status === 'running' && task.taskType !== 'company_profile_summary' && <Stack direction="row" gap={0.5} sx={{ mt: 0.5 }}>{[25, 50, 75].filter((value) => value > task.progress).map((value) => <Button key={value} size="small" onClick={() => void updateTask(task.id, { progress: value })}>{value}%</Button>)}</Stack>}
+              {task.status === 'running' && !isAutomatedTask(task) && <Stack direction="row" gap={0.5} sx={{ mt: 0.5 }}>{[25, 50, 75].filter((value) => value > task.progress).map((value) => <Button key={value} size="small" onClick={() => void updateTask(task.id, { progress: value })}>{value}%</Button>)}</Stack>}
             </TableCell>
-            <TableCell>{formatDate(task.updatedAt)}{readTaskSummary(task.result) && <Typography variant="body2" sx={{ mt: 0.75, maxWidth: 360 }}>{readTaskSummary(task.result)}</Typography>}</TableCell>
+            <TableCell>{formatDate(task.updatedAt)}{readTaskSummary(task.result) && <Typography variant="body2" sx={{ mt: 0.75, maxWidth: 360 }}>{readTaskSummary(task.result)}</Typography>}{readTaskMatches(task.result).map((match) => <Typography key={match} variant="caption" display="block" color="text.secondary">{match}</Typography>)}</TableCell>
             <TableCell align="right"><IconButton aria-label={`Delete ${task.taskType}`} onClick={() => void deleteTask(task)}><DeleteOutline /></IconButton></TableCell>
           </TableRow>)}
           {!loading && !tasks.length && <TableRow><TableCell colSpan={5}><Typography color="text.secondary" sx={{ py: 2 }}>No saved tasks yet. Create one to start tracking its status.</Typography></TableCell></TableRow>}

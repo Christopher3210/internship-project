@@ -14,16 +14,17 @@ function makeTask(overrides: Record<string, unknown> = {}) {
   };
 }
 
-function makeService(task: ReturnType<typeof makeTask>) {
+function makeService(task: ReturnType<typeof makeTask>, companies: Record<string, unknown> = {}) {
   const tasks = {
     find: vi.fn().mockResolvedValue([task]),
     findOne: vi.fn().mockResolvedValue(task),
+    create: vi.fn((input) => ({ ...task, ...input })),
     save: vi.fn(async (value) => ({ ...value, updatedAt: new Date() })),
   };
   const audits = { create: vi.fn((value) => value), save: vi.fn(async (value) => value) };
   const redis = { set: vi.fn(async () => undefined) };
   return {
-    service: new AiAgentTaskExecutionService(tasks as never, audits as never, {} as never, redis as never),
+    service: new AiAgentTaskExecutionService(tasks as never, audits as never, companies as never, redis as never),
     tasks,
     audits,
     redis,
@@ -31,6 +32,22 @@ function makeService(task: ReturnType<typeof makeTask>) {
 }
 
 describe('AiAgentTaskExecutionService task tools', () => {
+  it('creates a company search task and persists its matching results', async () => {
+    const task = makeTask();
+    const company = { companyCode: 'US-3', companyName: 'Example Supplier', level: 3, country: 'USA', city: 'Boston', annualRevenue: 100, employees: 12 };
+    const { service } = makeService(task, { searchForAgent: vi.fn().mockResolvedValue({ total: 1, items: [company] }) });
+
+    const queued = await service.enqueueCompanySearchTask({ country: 'USA', level: 3 }, 'user-a');
+    for (let attempt = 0; attempt < 20 && task.status !== 'completed'; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 1));
+    }
+
+    expect(queued).toMatchObject({ taskType: 'company_search', status: 'queued', filters: { country: 'USA', level: 3 } });
+    expect(task.status).toBe('completed');
+    expect(task.progress).toBe(100);
+    expect(task.result).toMatchObject({ total: 1, items: [company] });
+  });
+
   it('lists only the authenticated owner’s recent tasks', async () => {
     const { service, tasks } = makeService(makeTask());
 

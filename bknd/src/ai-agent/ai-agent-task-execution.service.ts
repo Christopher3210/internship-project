@@ -40,6 +40,23 @@ export class AiAgentTaskExecutionService {
     return { taskId: task.id, taskType: task.taskType, status: task.status, message: 'Company profile summary task was queued.' };
   }
 
+  async enqueueCompanySearchTask(filters: { name?: string; country?: string; level?: number }, userId: string) {
+    const task = await this.tasks.save(this.tasks.create({
+      taskType: 'company_search',
+      status: 'queued',
+      progress: 0,
+      input: { filters },
+      owner: { id: userId } as User,
+    }));
+    await this.cacheState(task, userId);
+    await this.writeAudit(userId, 'task.queued', task.id, { taskType: task.taskType, filters });
+    setImmediate(() => {
+      void this.runCompanySearch(task.id, userId, filters)
+        .catch((error: unknown) => this.logger.error(`Task ${task.id} could not update its state`, error instanceof Error ? error.stack : undefined));
+    });
+    return { taskId: task.id, taskType: task.taskType, status: task.status, filters, message: 'Company search task was queued.' };
+  }
+
   async listRecentTasks(userId: string) {
     const tasks = await this.tasks.find({
       where: { owner: { id: userId } },
@@ -95,6 +112,36 @@ export class AiAgentTaskExecutionService {
       await this.updateState(taskId, userId, 'completed', 100, result);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'The company summary task failed';
+      await this.updateState(taskId, userId, 'failed', 100, undefined, message);
+    }
+  }
+
+  private async runCompanySearch(taskId: string, userId: string, filters: { name?: string; country?: string; level?: number }) {
+    try {
+      await this.updateState(taskId, userId, 'running', 15);
+      const matches = await this.companies.searchForAgent({
+        ...(filters.name ? { name: filters.name } : {}),
+        ...(filters.country ? { country: filters.country } : {}),
+        ...(filters.level !== undefined ? { levels: [filters.level] } : {}),
+        limit: 10,
+      });
+      await this.updateState(taskId, userId, 'running', 75);
+      const items = matches.items.map(({ companyCode, companyName, level, country, city, annualRevenue, employees }) => ({
+        companyCode, companyName, level, country, city, annualRevenue, employees,
+      }));
+      const result = {
+        filters,
+        total: matches.total,
+        returned: items.length,
+        items,
+        summary: matches.total
+          ? `Found ${matches.total} matching companies; showing ${items.length}.`
+          : 'No companies matched these filters.',
+        completedAt: new Date().toISOString(),
+      };
+      await this.updateState(taskId, userId, 'completed', 100, result);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'The company search task failed';
       await this.updateState(taskId, userId, 'failed', 100, undefined, message);
     }
   }
