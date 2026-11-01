@@ -40,6 +40,39 @@ export class AiAgentTaskExecutionService {
     return { taskId: task.id, taskType: task.taskType, status: task.status, message: 'Company profile summary task was queued.' };
   }
 
+  async listRecentTasks(userId: string) {
+    const tasks = await this.tasks.find({
+      where: { owner: { id: userId } },
+      order: { updatedAt: 'DESC' },
+      take: 10,
+    });
+    return tasks.map((task) => ({
+      taskId: task.id,
+      taskType: task.taskType,
+      status: task.status,
+      progress: task.progress,
+      description: typeof task.input?.description === 'string' ? task.input.description : undefined,
+      updatedAt: task.updatedAt,
+    }));
+  }
+
+  async setTaskProgress(taskId: string, userId: string, progress: number) {
+    if (!Number.isInteger(progress) || progress < 0 || progress > 99) {
+      throw new Error('Progress must be a whole number from 0 to 99; task completion is controlled by the task itself.');
+    }
+    const task = await this.tasks.findOne({ where: { id: taskId }, relations: { owner: true } });
+    if (!task || task.owner.id !== userId) throw new Error('Task was not found for this user.');
+    if (task.status === 'completed' || task.status === 'failed') {
+      throw new Error(`This task is already ${task.status}; its progress cannot be changed.`);
+    }
+    task.progress = progress;
+    task.status = progress === 0 ? 'queued' : 'running';
+    const saved = await this.tasks.save(task);
+    await this.cacheState(saved, userId);
+    await this.writeAudit(userId, 'task.progress.updated', taskId, { progress, status: saved.status, source: 'agent' });
+    return { taskId, taskType: saved.taskType, status: saved.status, progress: saved.progress };
+  }
+
   private async runCompanyProfileSummary(taskId: string, userId: string, companyIdentifier: string) {
     try {
       await this.updateState(taskId, userId, 'running', 10);

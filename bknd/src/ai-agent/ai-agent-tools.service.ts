@@ -43,6 +43,30 @@ export class AiAgentToolsService {
       {
         type: 'function' as const,
         function: {
+          name: 'list_my_tasks',
+          description: 'List the authenticated user\'s 10 most recently updated AI tasks. Use this to identify a task before changing its progress.',
+          parameters: { type: 'object', properties: {}, additionalProperties: false },
+        },
+      },
+      {
+        type: 'function' as const,
+        function: {
+          name: 'set_task_progress',
+          description: 'Set the progress of one of the authenticated user\'s queued or running tasks. Completed or failed tasks cannot be changed; use only a taskId returned by list_my_tasks or shown in the conversation.',
+          parameters: {
+            type: 'object',
+            properties: {
+              taskId: { type: 'string', format: 'uuid', description: 'The task ID to update.' },
+              progress: { type: 'integer', minimum: 0, maximum: 99, description: 'Progress percentage. Use 0 to queue, or 1 to 99 to mark it running.' },
+            },
+            required: ['taskId', 'progress'],
+            additionalProperties: false,
+          },
+        },
+      },
+      {
+        type: 'function' as const,
+        function: {
           name: 'start_company_profile_summary',
           description: 'Create an owned background task that looks up one company by exact company name or code and saves a structured profile summary to the task record.',
           parameters: {
@@ -88,6 +112,17 @@ export class AiAgentToolsService {
           companyCode, companyName, level: supplierLevel, country, city, annualRevenue, employees,
         })),
       };
+    }
+    if (name === 'list_my_tasks') {
+      if (!actor) throw new Error('An authenticated user is required to list tasks');
+      return this.taskExecution.listRecentTasks(actor.id);
+    }
+    if (name === 'set_task_progress') {
+      if (!actor) throw new Error('An authenticated user is required to update a task');
+      const taskId = typeof args.taskId === 'string' ? args.taskId.trim() : '';
+      const progress = Number(args.progress);
+      if (!taskId) throw new Error('Provide a task ID');
+      return this.taskExecution.setTaskProgress(taskId, actor.id, progress);
     }
     if (name === 'start_company_profile_summary') {
       const companyIdentifier = typeof args.companyIdentifier === 'string' ? args.companyIdentifier.trim() : '';

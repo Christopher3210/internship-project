@@ -120,7 +120,7 @@ export class AiModelService {
 
     const apiMessages: Array<Record<string, unknown>> = [{
       role: 'system',
-      content: '你是供应链管理系统的 AI 助手。回答当前公司的数量、收入、国家覆盖或员工统计时，必须调用 get_company_summary；用户查询具体公司或供应商等级时，必须调用 search_companies；用户要求生成公司资料摘要时，必须调用 start_company_profile_summary 创建任务。只使用提供的项目工具，不要猜测或编造数据库事实。',
+      content: '你是供应链管理系统的 AI 助手。回答当前公司的数量、收入、国家覆盖或员工统计时，必须调用 get_company_summary；用户查询具体公司或供应商等级/国家时，必须调用 search_companies；用户要求查看自己的 AI 任务时，调用 list_my_tasks；用户要求调整任务进度时，先根据对话中的任务 ID 操作，若不确定目标则先调用 list_my_tasks，再调用 set_task_progress。只能操作当前用户自己的 queued/running 任务；completed/failed 任务不可修改。用户要求生成公司资料摘要时，必须调用 start_company_profile_summary 创建任务。只使用提供的项目工具，不要猜测或编造数据库事实。',
     }, ...messages.map((message) => {
       const attachmentText = message.attachments?.map((file) => file.textContent ? `\n\n[Attachment: ${file.name}]\n${file.textContent}` : `[Attachment: ${file.name}; content is not available to the model]`).join('') ?? '';
       return { role: message.role, content: `${message.content}${attachmentText}` };
