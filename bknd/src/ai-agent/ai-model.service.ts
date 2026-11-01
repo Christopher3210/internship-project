@@ -72,6 +72,19 @@ export class AiModelService {
           model: providerConfig.model,
         };
       }
+      if (toolExecutor && /公司|company/i.test(latest.content) && /生成|摘要|简介|总结|profile|summari[sz]e/i.test(latest.content)) {
+        const quotedIdentifier = latest.content.match(/["“'‘]([^"”'’]+)["”'’]/)?.[1];
+        const identifier = quotedIdentifier?.trim() || latest.content
+          .replace(/请|帮我|帮忙|为|给|公司名称|公司名|公司资料|公司信息|公司|生成|一份|一个|资料|信息|摘要|简介|总结|报告|create|generate|summari[sz]e|profile|summary|company|for|about/gi, ' ')
+          .replace(/[？！?。，,.：:]/g, ' ')
+          .trim();
+        if (!identifier) return { content: '请提供准确的公司名称或公司代码，我再为你创建资料摘要任务。', model: providerConfig.model };
+        const task = await toolExecutor('start_company_profile_summary', { companyIdentifier: identifier }) as { taskId: string; status: string };
+        return {
+          content: `已为“${identifier}”创建公司资料摘要任务（${task.taskId}），当前状态：${task.status}。完成后可在 Agent Tasks 页面查看摘要。`,
+          model: providerConfig.model,
+        };
+      }
       if (toolExecutor && /公司|company|供应商|supplier/i.test(latest.content) && /查询|查找|搜索|找一下|search|find/i.test(latest.content)) {
         const levelMatch = latest.content.match(/(?:level|等级|层级|L)\s*[:：]?\s*([1-4])|第\s*([1-4])\s*级/i);
         const quotedName = latest.content.match(/["“'‘]([^"”'’]+)["”'’]/)?.[1];
@@ -107,7 +120,7 @@ export class AiModelService {
 
     const apiMessages: Array<Record<string, unknown>> = [{
       role: 'system',
-      content: '你是供应链管理系统的 AI 助手。回答当前公司的数量、收入、国家覆盖或员工统计时，必须调用 get_company_summary；用户查询具体公司或供应商等级时，必须调用 search_companies。只使用提供的只读工具，不要猜测或编造数据库事实。',
+      content: '你是供应链管理系统的 AI 助手。回答当前公司的数量、收入、国家覆盖或员工统计时，必须调用 get_company_summary；用户查询具体公司或供应商等级时，必须调用 search_companies；用户要求生成公司资料摘要时，必须调用 start_company_profile_summary 创建任务。只使用提供的项目工具，不要猜测或编造数据库事实。',
     }, ...messages.map((message) => {
       const attachmentText = message.attachments?.map((file) => file.textContent ? `\n\n[Attachment: ${file.name}]\n${file.textContent}` : `[Attachment: ${file.name}; content is not available to the model]`).join('') ?? '';
       return { role: message.role, content: `${message.content}${attachmentText}` };

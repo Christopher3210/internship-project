@@ -85,6 +85,13 @@ export class CompaniesService implements OnModuleInit {
     return { items, total, page: currentPage, pageSize: currentPageSize };
   }
 
+  async findOneByCodeOrExactName(identifier: string) {
+    return this.companiesRepository.createQueryBuilder('company')
+      .where('company.companyCode = :identifier', { identifier })
+      .orWhere('company.companyName ILIKE :identifier', { identifier })
+      .getOne();
+  }
+
   async create(dto: CreateCompanyDto) {
     const companyCode = dto.companyCode.trim();
     if (await this.companiesRepository.existsBy({ companyCode })) throw new ConflictException('Company code already exists');

@@ -105,13 +105,16 @@ export class AiAgentService {
     const modelContext = [...(cachedContext ?? session.messages.slice(-20)), userMessage].slice(-20);
     const provider = (session.provider || this.aiModelService.getDefaultProvider()) as AiProviderName;
     const promptIdentity = modelContext.map(({ role, content, attachments }) => ({ role, content, attachments }));
-    const digest = createHash('sha256').update(JSON.stringify({ provider, model: session.model, toolVersion: 'company-tools-v2', messages: promptIdentity })).digest('hex');
+    const digest = createHash('sha256').update(JSON.stringify({ provider, model: session.model, toolVersion: 'company-task-v3', messages: promptIdentity })).digest('hex');
     const cacheKey = `ai:chat_cache:${ownerId}:${digest}`;
     let reply = await this.redis.get<{ content: string; model: string }>(cacheKey);
     if (!reply) {
       reply = await this.aiModelService.generateReply(provider, modelContext, async (toolName, args) => {
-        const result = await this.agentTools.execute(toolName, args);
-        await this.writeAudit(actor.id, 'agent.tool.invoke', toolName, null, { toolName });
+        const result = await this.agentTools.execute(toolName, args, actor);
+        const taskId = typeof result === 'object' && result !== null && 'taskId' in result && typeof result.taskId === 'string'
+          ? result.taskId
+          : null;
+        await this.writeAudit(actor.id, 'agent.tool.invoke', toolName, taskId, { toolName });
         return result;
       });
       await this.redis.set(cacheKey, reply, CHAT_CACHE_TTL_SECONDS);

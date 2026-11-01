@@ -1,6 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { CompaniesService } from '../companies/companies.service.js';
 import { DashboardService } from '../dashboard/dashboard.service.js';
+import { AiAgentTaskExecutionService } from './ai-agent-task-execution.service.js';
+import type { AiAuthenticatedUser } from './ai-current-user.js';
 
 /** A small allowlist of read-only project operations available to the model. */
 @Injectable()
@@ -8,6 +10,7 @@ export class AiAgentToolsService {
   constructor(
     private readonly dashboardService: DashboardService,
     private readonly companiesService: CompaniesService,
+    private readonly taskExecution: AiAgentTaskExecutionService,
   ) {}
 
   getDefinitions() {
@@ -36,10 +39,25 @@ export class AiAgentToolsService {
           },
         },
       },
+      {
+        type: 'function' as const,
+        function: {
+          name: 'start_company_profile_summary',
+          description: 'Create an owned background task that looks up one company by exact company name or code and saves a structured profile summary to the task record.',
+          parameters: {
+            type: 'object',
+            properties: {
+              companyIdentifier: { type: 'string', minLength: 1, maxLength: 160, description: 'Exact company name or company code.' },
+            },
+            required: ['companyIdentifier'],
+            additionalProperties: false,
+          },
+        },
+      },
     ];
   }
 
-  async execute(name: string, args: Record<string, unknown> = {}) {
+  async execute(name: string, args: Record<string, unknown> = {}, actor?: AiAuthenticatedUser) {
     if (name === 'get_company_summary') {
       return this.dashboardService.getSummary();
     }
@@ -60,6 +78,12 @@ export class AiAgentToolsService {
           companyCode, companyName, level: supplierLevel, country, city, annualRevenue, employees,
         })),
       };
+    }
+    if (name === 'start_company_profile_summary') {
+      const companyIdentifier = typeof args.companyIdentifier === 'string' ? args.companyIdentifier.trim() : '';
+      if (!companyIdentifier || companyIdentifier.length > 160) throw new Error('Provide an exact company name or company code');
+      if (!actor) throw new Error('An authenticated user is required to create a task');
+      return this.taskExecution.enqueueCompanyProfileSummary(companyIdentifier, actor.id);
     }
     throw new Error(`Tool is not allowed: ${name}`);
   }

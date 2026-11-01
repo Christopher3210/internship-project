@@ -36,6 +36,11 @@ function formatDate(value: string) {
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
 }
 
+function readTaskSummary(result: unknown) {
+  if (typeof result !== 'object' || result === null || !('summary' in result)) return null;
+  return typeof result.summary === 'string' ? result.summary : null;
+}
+
 export default function AgentTasksPage() {
   const [tasks, setTasks] = useState<AiTask[]>([]);
   const [loading, setLoading] = useState(true);
@@ -45,8 +50,8 @@ export default function AgentTasksPage() {
   const [taskType, setTaskType] = useState('');
   const [description, setDescription] = useState('');
 
-  const loadTasks = useCallback(async () => {
-    setLoading(true);
+  const loadTasks = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
     setError('');
     try {
       const response = await aiFetch(`${apiBaseUrl}/ai-agent/tasks?page=1&pageSize=100`);
@@ -56,11 +61,15 @@ export default function AgentTasksPage() {
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Could not load tasks');
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, []);
 
-  useEffect(() => { void loadTasks(); }, [loadTasks]);
+  useEffect(() => {
+    void loadTasks();
+    const timer = window.setInterval(() => void loadTasks(true), 2000);
+    return () => window.clearInterval(timer);
+  }, [loadTasks]);
 
   async function createTask() {
     if (!taskType.trim()) return;
@@ -128,17 +137,17 @@ export default function AgentTasksPage() {
           {loading && <TableRow><TableCell colSpan={5}><Stack direction="row" alignItems="center" gap={1}><CircularProgress size={18} /><Typography>Loading tasks…</Typography></Stack></TableCell></TableRow>}
           {!loading && tasks.map((task) => <TableRow key={task.id} hover>
             <TableCell><Typography fontWeight={600}>{task.taskType}</Typography><Typography variant="caption" color="text.secondary">{task.id}</Typography>{typeof task.input.description === 'string' && <Typography variant="body2" color="text.secondary">{task.input.description}</Typography>}{task.error && <Typography variant="caption" color="error">{task.error}</Typography>}</TableCell>
-            <TableCell><TextField select size="small" value={task.status} onChange={(event) => {
+            <TableCell>{task.taskType === 'company_profile_summary' ? <Chip size="small" label={statusLabel[task.status]} color={statusColor[task.status]} /> : <TextField select size="small" value={task.status} onChange={(event) => {
               const status = event.target.value as TaskStatus;
               const progress = status === 'completed' ? 100 : status === 'queued' ? 0 : task.progress;
               void updateTask(task.id, { status, progress });
             }} sx={{ minWidth: 140 }} inputProps={{ 'aria-label': `Status for ${task.taskType}` }}>
               {(Object.keys(statusLabel) as TaskStatus[]).map((status) => <MenuItem key={status} value={status}><Chip size="small" label={statusLabel[status]} color={statusColor[status]} /></MenuItem>)}
-            </TextField></TableCell>
+            </TextField>}</TableCell>
             <TableCell><Stack direction="row" alignItems="center" gap={1}><Box sx={{ flex: 1 }}><LinearProgress variant="determinate" value={task.progress} sx={{ borderRadius: 1 }} /></Box><Typography variant="caption" sx={{ minWidth: 34 }}>{task.progress}%</Typography></Stack>
-              {task.status === 'running' && <Stack direction="row" gap={0.5} sx={{ mt: 0.5 }}>{[25, 50, 75].filter((value) => value > task.progress).map((value) => <Button key={value} size="small" onClick={() => void updateTask(task.id, { progress: value })}>{value}%</Button>)}</Stack>}
+              {task.status === 'running' && task.taskType !== 'company_profile_summary' && <Stack direction="row" gap={0.5} sx={{ mt: 0.5 }}>{[25, 50, 75].filter((value) => value > task.progress).map((value) => <Button key={value} size="small" onClick={() => void updateTask(task.id, { progress: value })}>{value}%</Button>)}</Stack>}
             </TableCell>
-            <TableCell>{formatDate(task.updatedAt)}</TableCell>
+            <TableCell>{formatDate(task.updatedAt)}{readTaskSummary(task.result) && <Typography variant="body2" sx={{ mt: 0.75, maxWidth: 360 }}>{readTaskSummary(task.result)}</Typography>}</TableCell>
             <TableCell align="right"><IconButton aria-label={`Delete ${task.taskType}`} onClick={() => void deleteTask(task)}><DeleteOutline /></IconButton></TableCell>
           </TableRow>)}
           {!loading && !tasks.length && <TableRow><TableCell colSpan={5}><Typography color="text.secondary" sx={{ py: 2 }}>No saved tasks yet. Create one to start tracking its status.</Typography></TableCell></TableRow>}
