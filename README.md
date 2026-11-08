@@ -146,18 +146,21 @@ npm run dev
 ## AI agent interaction module (current iteration)
 
 - Global chat drawer with saved multi-turn sessions, provider selection, file attachments, and basic Markdown rendering.
-- Agent Tasks page at `/agent-tasks` currently uses sample rows for the task-progress UI.
+- Agent Tasks at `/agent-tasks` displays PostgreSQL task records owned by the signed-in account. Company search and profile-summary tasks execute existing services; manual task records support progress updates.
 - NestJS endpoints: `GET /ai-agent/providers`, `GET/POST /ai-agent/sessions`, `GET /ai-agent/sessions/:id`, and `POST /ai-agent/sessions/:id/messages`.
 - Chat sessions are persisted in PostgreSQL table `ai_chat_sessions` (TypeORM creates it in development).
 - `AI_PROVIDER=mock` enables local demo replies without an API key. DeepSeek, Qwen, OpenAI, Kimi, and an OpenAI-compatible local endpoint can be configured in `bknd/.env`; keys must remain local and must not be committed.
 - Text attachments supported for TXT, MD, CSV, JSON, TSV, and LOG files up to 100 KB of text. Other files are recorded as attachments only; no image/PDF understanding is implemented.
 
-After starting the backend and frontend, open the dashboard and use the floating sparkle button to open chat. Visit `/agent-tasks` to see the sample task progress table. Configure provider keys in `bknd/.env` to use a real model; the default mock provider is intended for a safe local demo.
+After starting the backend and frontend, open the dashboard and use the floating sparkle button to open chat. Visit `/agent-tasks` to see saved task progress. Configure provider keys in `bknd/.env` to use a real model; the default mock provider is intended for a safe local demo.
 
 ## AI backend persistence, access control, and cache
 
 - AI tables: existing `ai_chat_sessions` plus `ai_user_memory`, `ai_task_record`, and `ai_operation_audit`. Each record is associated with `users`; session ownership is nullable only for legacy rows, while new API-created records always have an owner.
-- All `/ai-agent` routes require `Authorization: Bearer <accessToken>`. Sign in at `/login` to save a token for the chat UI. Ordinary users see only their own records; admins can filter records by `userId` and view all audit records.
+- All `/ai-agent` routes require a valid Bearer token and an active database account. Sessions, memories and tasks are owner-only, including for administrators. Admins can view audit records within their server-configured tenant; user management also requires the Admin role. Registration/login remain public.
 - Sessions, memories, and tasks expose paginated CRUD endpoints. Audits can be appended and queried by owner/admin; only admins may correct or delete an audit, and those changes create a follow-up audit record.
-- Redis is configured with `REDIS_URL` (default `redis://localhost:6379`). Keys use `ai:session:<userId>:<sessionId>` (2 hours), `ai:chat_cache:<userId>:<promptHash>` (10 minutes), and `ai:task_state:<userId>:<taskId>` (24 hours or an earlier task expiry). `ai:llm_cache` is reserved and not implemented yet. PostgreSQL remains the source of truth; AI APIs continue if Redis is unavailable.
+- Redis is configured with `REDIS_URL` (default `redis://localhost:6379`). Session context keeps 10 rounds for 2 hours. Read-only query results have configurable per-business TTLs (default 10 minutes), with invalidation on business writes. Model decisions and mutation results are never replayed from cache. Task records persist in PostgreSQL independently of temporary Redis state. `ai:llm_cache` is deliberately reserved only.
+- A user-scoped Redis saver implements the official LangGraph `BaseCheckpointSaver` contract for future graph execution. Unlike optional caches, checkpoint storage errors are propagated to callers.
 - Main routes: `/ai-agent/sessions`, `/ai-agent/memory`, `/ai-agent/tasks`, and `/ai-agent/audits`. Full request/response schemas are available in Swagger at `/api`.
+
+See [AI week-one implementation and verification](docs/ai-week-one.md) for configuration, test commands, and boundaries.

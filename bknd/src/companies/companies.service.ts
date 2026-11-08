@@ -1,9 +1,11 @@
-import { ConflictException, Injectable, NotFoundException, OnModuleInit } from '@nestjs/common';
+import { ConflictException, Injectable, NotFoundException, OnModuleInit, Optional } from '@nestjs/common';
+import { AiQueryCacheService } from '../ai-agent/ai-query-cache.service.js';
 import { InjectRepository } from '@nestjs/typeorm';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { Repository } from 'typeorm';
 import { Company } from './company.entity.js';
+import { normalizeCountry } from './normalize-country.js';
 import { CreateCompanyDto } from './dto/create-company.dto.js';
 import { UpdateCompanyDto } from './dto/update-company.dto.js';
 import { CompanyRelationship } from './relationship.entity.js';
@@ -30,6 +32,7 @@ export class CompaniesService implements OnModuleInit {
   constructor(
     @InjectRepository(Company) private readonly companiesRepository: Repository<Company>,
     @InjectRepository(CompanyRelationship) private readonly relationshipsRepository: Repository<CompanyRelationship>,
+    @Optional() private readonly queryCache?: AiQueryCacheService,
   ) {}
 
   async onModuleInit() {
@@ -49,6 +52,7 @@ export class CompaniesService implements OnModuleInit {
     });
     await this.companiesRepository.upsert(companies, ['companyCode']);
     await this.relationshipsRepository.upsert(relationships, ['companyCode']);
+    await this.queryCache?.invalidate('COMPANIES');
   }
 
   async findAll(name?: string, levels?: string, page?: string, pageSize?: string) {
@@ -85,17 +89,44 @@ export class CompaniesService implements OnModuleInit {
     return { items, total, page: currentPage, pageSize: currentPageSize };
   }
 
-  async searchForAgent(filters: { name?: string; country?: string; levels?: number[]; limit: number }) {
+  async searchForAgent(filters: {
+    name?: string;
+    country?: string;
+    city?: string;
+    levels?: number[];
+    limit?: number;
+    page?: number;
+    pageSize?: number;
+    sortBy?: 'companyName' | 'level' | 'country' | 'city' | 'foundedYear' | 'annualRevenue' | 'employees' | 'efficiency';
+    sortOrder?: 'ASC' | 'DESC';
+  }) {
     const query = this.companiesRepository.createQueryBuilder('company');
     if (filters.name) query.andWhere('company.companyName ILIKE :name', { name: `%${filters.name}%` });
-    if (filters.country) query.andWhere('company.country ILIKE :country', { country: `%${filters.country}%` });
+    if (filters.country) query.andWhere('company.country ILIKE :country', { country: `%${normalizeCountry(filters.country)}%` });
+    if (filters.city) query.andWhere('company.city ILIKE :city', { city: `%${filters.city}%` });
     if (filters.levels?.length) query.andWhere('company.level IN (:...levels)', { levels: filters.levels });
+    const page = Number.isInteger(filters.page) && filters.page! > 0 ? filters.page! : 1;
+    const requestedPageSize = filters.pageSize ?? filters.limit ?? 5;
+    const pageSize = Number.isInteger(requestedPageSize) && requestedPageSize > 0 ? Math.min(requestedPageSize, 100) : 5;
+    const sortColumns = {
+      companyName: 'company.companyName',
+      level: 'company.level',
+      country: 'company.country',
+      city: 'company.city',
+      foundedYear: 'company.foundedYear',
+      annualRevenue: 'company.annualRevenue',
+      employees: 'company.employees',
+      efficiency: 'company.annualRevenue / NULLIF(company.employees, 0)',
+    } as const;
+    const sortBy = filters.sortBy ?? 'level';
+    const sortOrder = filters.sortOrder ?? 'ASC';
     const [items, total] = await query
-      .orderBy('company.level', 'ASC')
+      .orderBy(sortColumns[sortBy], sortOrder)
       .addOrderBy('company.companyCode', 'ASC')
-      .take(filters.limit)
+      .skip((page - 1) * pageSize)
+      .take(pageSize)
       .getManyAndCount();
-    return { items, total };
+    return { items, total, page, pageSize, totalPages: Math.ceil(total / pageSize) };
   }
 
   async findOneByCodeOrExactName(identifier: string) {
@@ -113,6 +144,7 @@ export class CompaniesService implements OnModuleInit {
       foundedYear: dto.foundedYear, annualRevenue: dto.annualRevenue, employees: dto.employees,
     }));
     await this.relationshipsRepository.save({ companyCode, parentCompany: dto.parentCompany?.trim() || null });
+    await this.queryCache?.invalidate('COMPANIES');
     return company;
   }
 
@@ -123,6 +155,7 @@ export class CompaniesService implements OnModuleInit {
     Object.assign(company, companyUpdates);
     const saved = await this.companiesRepository.save(company);
     if (parentCompany !== undefined) await this.relationshipsRepository.upsert({ companyCode, parentCompany: parentCompany?.trim() || null }, ['companyCode']);
+    await this.queryCache?.invalidate('COMPANIES');
     return saved;
   }
 
@@ -130,6 +163,7 @@ export class CompaniesService implements OnModuleInit {
     const result = await this.companiesRepository.delete(companyCode);
     if (!result.affected) throw new NotFoundException('Company not found');
     await this.relationshipsRepository.delete({ companyCode });
+    await this.queryCache?.invalidate('COMPANIES');
     return { deleted: true };
   }
 }

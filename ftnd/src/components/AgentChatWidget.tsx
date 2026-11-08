@@ -2,7 +2,12 @@
 
 import { useEffect, useRef, useState, type ChangeEvent, type KeyboardEvent } from 'react';
 import { useRouter } from 'next/navigation';
-import { AddCommentOutlined, AttachFileOutlined, AutoAwesomeOutlined, Close, DeleteOutline, SendRounded } from '@mui/icons-material';
+import AddCommentOutlined from '@mui/icons-material/AddCommentOutlined';
+import AttachFileOutlined from '@mui/icons-material/AttachFileOutlined';
+import AutoAwesomeOutlined from '@mui/icons-material/AutoAwesomeOutlined';
+import Close from '@mui/icons-material/Close';
+import DeleteOutline from '@mui/icons-material/DeleteOutline';
+import SendRounded from '@mui/icons-material/SendRounded';
 import { Alert, Avatar, Box, Button, Chip, CircularProgress, Divider, Drawer, Fab, IconButton, MenuItem, Paper, Select, Stack, TextField, Tooltip, Typography } from '@mui/material';
 import type { AiProvider, ChatAttachment, ChatMessage, ChatSession } from '@/lib/ai-agent';
 import { AI_ACCESS_TOKEN_KEY, aiFetch, apiBaseUrl, readApiError } from '@/lib/ai-agent';
@@ -30,6 +35,26 @@ export function AgentChatWidget() {
   const [notice, setNotice] = useState('');
   const endRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const selectionVersion = useRef(0);
+  const activeId = useRef<string | null>(null);
+  const drafts = useRef(new Map<string, { input: string; attachments: ChatAttachment[] }>());
+  const draft = useRef({ input, attachments });
+  const openRef = useRef(open);
+  openRef.current = open;
+  draft.current = { input, attachments };
+
+  function beginSelection() {
+    if (activeId.current) drafts.current.set(activeId.current, draft.current);
+    return ++selectionVersion.current;
+  }
+  function selectLoaded(loaded: ChatSession) {
+    activeId.current = loaded.id;
+    setSession(loaded); setProvider(loaded.provider ?? 'mock');
+    const savedDraft = drafts.current.get(loaded.id);
+    setInput(savedDraft?.input ?? ''); setAttachments(savedDraft?.attachments ?? []);
+    setError('');
+    window.localStorage.setItem(SESSION_KEY, loaded.id);
+  }
 
   function reportError(cause: unknown) {
     const message = cause instanceof Error ? cause.message : 'The request could not be completed';
@@ -42,19 +67,27 @@ export function AgentChatWidget() {
     setError(message);
   }
 
+  function closeChat() {
+    setOpen(false);
+    openRef.current = false;
+    if (activeId.current) void aiFetch(`${apiBaseUrl}/ai-agent/sessions/${activeId.current}/close`, { method: 'POST' }).catch(() => undefined);
+  }
+
   async function loadSession(id: string) {
+    const version = beginSelection();
     const response = await aiFetch(`${apiBaseUrl}/ai-agent/sessions/${id}`);
     if (!response.ok) throw new Error(await readApiError(response));
     const loaded = await response.json() as ChatSession;
-    setSession(loaded); setProvider(loaded.provider ?? 'mock');
-    window.localStorage.setItem(SESSION_KEY, loaded.id);
+    if (version === selectionVersion.current) selectLoaded(loaded);
   }
   async function createSession(selected: AiProvider['id']) {
+    const version = beginSelection();
     const response = await aiFetch(`${apiBaseUrl}/ai-agent/sessions`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ provider: selected }) });
     if (!response.ok) throw new Error(await readApiError(response));
     const created = await response.json() as ChatSession;
-    setSession(created); setProvider(selected); setSessions((items) => [summary(created), ...items.filter((item) => item.id !== created.id)]);
-    window.localStorage.setItem(SESSION_KEY, created.id);
+    setSessions((items) => [summary(created), ...items.filter((item) => item.id !== created.id)]);
+    if (version === selectionVersion.current) selectLoaded(created);
+    return created;
   }
 
   useEffect(() => {
@@ -78,7 +111,7 @@ export function AgentChatWidget() {
       } catch (cause) { if (!cancelled) reportError(cause); }
       finally { if (!cancelled) setLoading(false); }
     })();
-    return () => { cancelled = true; };
+    return () => { cancelled = true; selectionVersion.current += 1; };
     // Load saved history whenever the drawer opens.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
@@ -111,40 +144,49 @@ export function AgentChatWidget() {
     } catch (cause) { reportError(cause); }
   }
   async function handleSend() {
-    if (sending || (!input.trim() && !attachments.length)) return;
+    if (sending || loading || !session || (!input.trim() && !attachments.length)) return;
+    const version = selectionVersion.current;
+    const originalId = session.id;
     setSending(true); setError(''); setNotice('');
     const content = input.trim(); const files = attachments; setInput(''); setAttachments([]);
+    drafts.current.delete(originalId);
+    draft.current = { input: '', attachments: [] };
     try {
       let active = session;
       if (!active) { await createSession(provider); const res = await aiFetch(`${apiBaseUrl}/ai-agent/sessions`); if (!res.ok) throw new Error(await readApiError(res)); const page = await res.json() as { items: SessionSummary[] }; const list = page.items; if (!list[0]) throw new Error('Could not create chat session'); const detail = await aiFetch(`${apiBaseUrl}/ai-agent/sessions/${list[0].id}`); if (!detail.ok) throw new Error(await readApiError(detail)); active = await detail.json() as ChatSession; }
       const response = await aiFetch(`${apiBaseUrl}/ai-agent/sessions/${active.id}/messages`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ content, attachments: files }) });
       if (!response.ok) throw new Error(await readApiError(response));
       const updated = await response.json() as ChatSession;
-      setSession(updated); setSessions((items) => [summary(updated), ...items.filter((item) => item.id !== updated.id)]); window.localStorage.setItem(SESSION_KEY, updated.id);
-    } catch (cause) { setInput(content); setAttachments(files); reportError(cause); }
+      if (!openRef.current) void aiFetch(`${apiBaseUrl}/ai-agent/sessions/${updated.id}/close`, { method: 'POST' }).catch(() => undefined);
+      setSessions((items) => [summary(updated), ...items.filter((item) => item.id !== updated.id)]);
+      if (activeId.current === updated.id && version === selectionVersion.current) setSession(updated);
+    } catch (cause) {
+      drafts.current.set(originalId, { input: content, attachments: files });
+      if (activeId.current === originalId && version === selectionVersion.current) { setInput(content); setAttachments(files); reportError(cause); }
+    }
     finally { setSending(false); }
   }
   function onKeyDown(event: KeyboardEvent<HTMLDivElement>) { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void handleSend(); } }
 
   return <>
     <Tooltip title="Open AI assistant"><Fab color="primary" aria-label="Open AI assistant" onClick={() => setOpen(true)} sx={{ position: 'fixed', right: 24, bottom: 24, zIndex: 1200 }}><AutoAwesomeOutlined /></Fab></Tooltip>
-    <Drawer anchor="right" open={open} onClose={() => setOpen(false)} PaperProps={{ sx: { width: { xs: '100%', sm: 480 }, maxWidth: '100vw', display: 'flex' } }}>
+    <Drawer anchor="right" open={open} onClose={closeChat} PaperProps={{ sx: { width: { xs: '100%', sm: 480 }, maxWidth: '100vw', display: 'flex' } }}>
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, p: 1.5 }}>
         <Avatar sx={{ bgcolor: 'primary.main', width: 34, height: 34 }}><AutoAwesomeOutlined fontSize="small" /></Avatar>
         <Box sx={{ flex: 1, minWidth: 0 }}><Typography fontWeight={700}>AI Assistant</Typography><Typography variant="caption" color="text.secondary" noWrap>{session?.model ?? 'Chat and task helper'}</Typography></Box>
-        <Select size="small" value={provider} onChange={(event) => { const next = event.target.value as AiProvider['id']; setProvider(next); void createSession(next).catch(reportError); }} sx={{ maxWidth: 150 }} aria-label="AI provider">
+        <Select size="small" value={providers.some((item) => item.id === provider) ? provider : ''} onChange={(event) => { const next = event.target.value as AiProvider['id']; setProvider(next); void createSession(next).catch(reportError); }} sx={{ maxWidth: 150 }} aria-label="AI provider">
           {providers.map((item) => <MenuItem key={item.id} value={item.id} disabled={!item.configured}>{item.label}{item.configured ? '' : ' (not configured)'}</MenuItem>)}
         </Select>
         <Tooltip title="New chat"><IconButton onClick={() => void createSession(provider).catch(reportError)} aria-label="New chat"><AddCommentOutlined /></IconButton></Tooltip>
         <Tooltip title="Delete current chat"><span><IconButton onClick={() => void deleteCurrentSession()} aria-label="Delete current chat" disabled={!session || sending}><DeleteOutline /></IconButton></span></Tooltip>
-        <IconButton onClick={() => setOpen(false)} aria-label="Close chat"><Close /></IconButton>
+        <IconButton onClick={closeChat} aria-label="Close chat"><Close /></IconButton>
       </Box>
       <Divider />
       {sessions.length > 0 && <Box sx={{ px: 2, py: 1 }}><Select fullWidth size="small" value={session?.id ?? ''} onChange={(event) => void loadSession(event.target.value).catch(reportError)}>{sessions.map((item) => <MenuItem key={item.id} value={item.id}>{item.title}</MenuItem>)}</Select></Box>}
       <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto', px: 2, py: 1.5, bgcolor: 'grey.50' }}>
         {loading && <Stack alignItems="center" sx={{ mt: 8 }}><CircularProgress size={28} /><Typography sx={{ mt: 1 }}>Loading saved chats…</Typography></Stack>}
         {!loading && session?.messages.map((message: ChatMessage) => <Box key={message.id} sx={{ display: 'flex', justifyContent: message.role === 'user' ? 'flex-end' : 'flex-start', mb: 1.5 }}><Paper elevation={0} sx={{ maxWidth: '88%', p: 1.25, borderRadius: 2, bgcolor: message.role === 'user' ? 'primary.main' : 'background.paper', color: message.role === 'user' ? 'primary.contrastText' : 'text.primary', border: message.role === 'assistant' ? 1 : 0, borderColor: 'divider' }}>
-          {message.role === 'assistant' ? <AgentMessageRenderer message={message.structured} content={message.content} /> : <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{message.content}</Typography>}
+          {message.role === 'assistant' ? <AgentMessageRenderer message={message.structured} content={message.content} toolResults={message.toolResults} sessionId={session?.id} messageId={message.id} /> : <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{message.content}</Typography>}
           {!!message.attachments?.length && <Stack direction="row" flexWrap="wrap" gap={0.5} sx={{ mt: 0.75 }}>{message.attachments.map((file) => <Chip key={`${message.id}-${file.name}`} size="small" icon={<AttachFileOutlined />} label={file.name} />)}</Stack>}
         </Paper></Box>)}
         {sending && <Stack direction="row" gap={1} alignItems="center"><CircularProgress size={14} /><Typography variant="body2">Assistant is responding…</Typography></Stack>}<div ref={endRef} />

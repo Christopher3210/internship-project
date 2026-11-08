@@ -7,10 +7,12 @@ import { AppService } from './app.service.js';
 import { CompaniesModule } from './companies/companies.module.js';
 import { DashboardModule } from './dashboard/dashboard.module.js';
 import { UsersModule } from './users/users.module.js';
+import { AiCacheModule } from './ai-agent/ai-cache.module.js';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
+    AiCacheModule,
     TypeOrmModule.forRootAsync({
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({

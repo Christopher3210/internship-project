@@ -161,7 +161,7 @@ export default function AgentTasksPage() {
           {loading && <TableRow><TableCell colSpan={5}><Stack direction="row" alignItems="center" gap={1}><CircularProgress size={18} /><Typography>Loading tasks…</Typography></Stack></TableCell></TableRow>}
           {!loading && tasks.map((task) => <TableRow key={task.id} hover>
             <TableCell><Typography fontWeight={600}>{task.taskType}</Typography><Typography variant="caption" color="text.secondary">{task.id}</Typography>{typeof task.input.description === 'string' && <Typography variant="body2" color="text.secondary">{task.input.description}</Typography>}{task.error && <Typography variant="caption" color="error">{task.error}</Typography>}</TableCell>
-            <TableCell>{isAutomatedTask(task) ? <Chip size="small" label={statusLabel[task.status]} color={statusColor[task.status]} /> : <TextField select size="small" value={task.status} onChange={(event) => {
+            <TableCell>{isAutomatedTask(task) || task.status === 'completed' || task.status === 'failed' ? <Chip size="small" label={statusLabel[task.status]} color={statusColor[task.status]} /> : <TextField select size="small" value={task.status} onChange={(event) => {
               const status = event.target.value as TaskStatus;
               const progress = status === 'completed' ? 100 : status === 'queued' ? 0 : task.progress;
               void updateTask(task.id, { status, progress });

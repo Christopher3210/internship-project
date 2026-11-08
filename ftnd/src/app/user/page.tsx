@@ -1,6 +1,7 @@
 "use client";
 
 import { DashboardShell } from "@/components/DashboardShell";
+import { aiFetch } from '@/lib/ai-agent';
 import AddOutlined from "@mui/icons-material/AddOutlined";
 import DeleteOutlineOutlined from "@mui/icons-material/DeleteOutlineOutlined";
 import EditOutlined from "@mui/icons-material/EditOutlined";
@@ -34,7 +35,8 @@ export default function UserPage() {
       const params = new URLSearchParams();
       if (query.trim()) params.set("name", query.trim());
       if (roles.length) params.set("roles", roles.join(","));
-      const response = await fetch(`${apiBaseUrl}/users?${params.toString()}`);
+      const response = await aiFetch(`${apiBaseUrl}/users?${params.toString()}`);
+      if (response.status === 403) { setUsers([]); setNotice({ severity: 'error', text: '只有管理员可以管理用户。' }); return; }
       if (!response.ok) throw new Error();
       const data: User[] = await response.json();
       setUsers(data);
@@ -60,7 +62,7 @@ export default function UserPage() {
     event.preventDefault();
     const payload = editingUser && !form.password ? { ...form, password: undefined } : form;
     try {
-      const response = await fetch(editingUser ? `${apiBaseUrl}/users/${editingUser.id}` : `${apiBaseUrl}/users`, {
+      const response = await aiFetch(editingUser ? `${apiBaseUrl}/users/${editingUser.id}` : `${apiBaseUrl}/users`, {
         method: editingUser ? "PATCH" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
       });
       const data: { message?: string | string[] } = await response.json().catch(() => ({}));
@@ -76,7 +78,7 @@ export default function UserPage() {
   async function deleteUsers(ids: string[]) {
     if (!ids.length) return;
     try {
-      const response = await fetch(`${apiBaseUrl}/users`, { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids }) });
+      const response = await aiFetch(`${apiBaseUrl}/users`, { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids }) });
       if (!response.ok) throw new Error();
       setNotice({ severity: "success", text: `已删除 ${ids.length} 名用户。` });
       await loadUsers(nameQuery, selectedRoles);

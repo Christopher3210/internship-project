@@ -8,6 +8,9 @@ export class AiChatMessageResponseDto {
   @ApiProperty({ enum: ['user', 'assistant'], example: 'user' })
   role!: 'user' | 'assistant';
 
+  @ApiPropertyOptional({ description: 'Structured results returned by project tools during this assistant reply', type: 'array', items: { type: 'object' } })
+  toolResults?: Array<{ code: number; data: unknown; message: string; resultType: 'text' | 'table' | 'chart' | 'report' }>;
+
   @ApiProperty({ example: '帮我总结本周的供应链变化。' })
   content!: string;
 

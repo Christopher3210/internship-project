@@ -1,8 +1,10 @@
-import { ConflictException, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
+import { ConflictException, Injectable, NotFoundException, UnauthorizedException, Optional } from '@nestjs/common';
+import { AiQueryCacheService } from '../ai-agent/ai-query-cache.service.js';
+import { AiTenantScopeService } from '../ai-agent/ai-tenant-scope.service.js';
 import { JwtService } from '@nestjs/jwt';
 import { InjectRepository } from '@nestjs/typeorm';
 import * as bcrypt from 'bcrypt';
-import { Repository } from 'typeorm';
+import { Repository, SelectQueryBuilder } from 'typeorm';
 import { LoginDto } from './dto/login.dto.js';
 import { SignUpDto } from './dto/sign-up.dto.js';
 import { CreateUserDto } from './dto/create-user.dto.js';
@@ -14,6 +16,8 @@ export class UsersService {
   constructor(
     @InjectRepository(User) private readonly usersRepository: Repository<User>,
     private readonly jwtService: JwtService,
+    @Optional() private readonly queryCache?: AiQueryCacheService,
+    @Optional() private readonly tenants?: AiTenantScopeService,
   ) {}
 
   async signUp({ email, password }: SignUpDto) {
@@ -28,6 +32,7 @@ export class UsersService {
       status: 'Active',
       passwordHash: await bcrypt.hash(password, 12),
     }));
+    await this.queryCache?.invalidate('USERS');
     return { message: '注册成功', user: this.publicUser(user) };
   }
 
@@ -40,6 +45,7 @@ export class UsersService {
     if (!user || !(await bcrypt.compare(password, user.passwordHash))) {
       throw new UnauthorizedException('邮箱或密码错误');
     }
+    if (user.status.toLowerCase() !== 'active') throw new UnauthorizedException('Account is inactive');
     return {
       message: '登录成功',
       accessToken: await this.jwtService.signAsync({ sub: user.id, email: user.email }),
@@ -47,7 +53,7 @@ export class UsersService {
     };
   }
 
-  async findAll(name?: string, roles?: string) {
+  async findAll(name?: string, roles?: string, actorId?: string) {
     const query = this.usersRepository.createQueryBuilder('user');
     if (name?.trim()) {
       query.where('user.name ILIKE :name', { name: `%${name.trim()}%` });
@@ -56,8 +62,44 @@ export class UsersService {
     if (roleList.length) {
       query.andWhere('user.role IN (:...roles)', { roles: roleList });
     }
+    await this.restrictTenant(query, actorId);
     const users = await query.orderBy('user.createdAt', 'DESC').getMany();
     return users.map((user) => this.publicUser(user));
+  }
+
+  async searchForAgent(filters: {
+    name?: string;
+    roles?: string[];
+    status?: string;
+    page: number;
+    pageSize: number;
+    sortBy?: 'name' | 'email' | 'role' | 'status' | 'createdAt';
+    sortOrder?: 'ASC' | 'DESC';
+  }, actorId?: string) {
+    const query = this.usersRepository.createQueryBuilder('user');
+    if (filters.name?.trim()) query.andWhere('user.name ILIKE :name', { name: `%${filters.name.trim()}%` });
+    if (filters.roles?.length) query.andWhere('user.role IN (:...roles)', { roles: filters.roles });
+    if (filters.status?.trim()) query.andWhere('LOWER(user.status) = LOWER(:status)', { status: filters.status.trim() });
+    await this.restrictTenant(query, actorId);
+
+    const sortColumns = {
+      name: 'user.name', email: 'user.email', role: 'user.role', status: 'user.status', createdAt: 'user.createdAt',
+    } as const;
+    const sortBy = filters.sortBy ?? 'name';
+    const sortOrder = filters.sortOrder ?? 'ASC';
+    const [users, total] = await query
+      .orderBy(sortColumns[sortBy], sortOrder)
+      .skip((filters.page - 1) * filters.pageSize)
+      .take(filters.pageSize)
+      .getManyAndCount();
+
+    return {
+      items: users.map(({ name, email, role, status }) => ({ name, email, role, status })),
+      total,
+      page: filters.page,
+      pageSize: filters.pageSize,
+      totalPages: Math.ceil(total / filters.pageSize),
+    };
   }
 
   async create(createUserDto: CreateUserDto) {
@@ -73,6 +115,7 @@ export class UsersService {
       status: createUserDto.status.trim(),
       passwordHash: await bcrypt.hash(createUserDto.password, 12),
     }));
+    await this.queryCache?.invalidate('USERS');
     return this.publicUser(user);
   }
 
@@ -97,12 +140,22 @@ export class UsersService {
     if (updateUserDto.status) user.status = updateUserDto.status.trim();
     if (updateUserDto.password) user.passwordHash = await bcrypt.hash(updateUserDto.password, 12);
 
-    return this.publicUser(await this.usersRepository.save(user));
+    const saved = await this.usersRepository.save(user);
+    await this.queryCache?.invalidate('USERS');
+    return this.publicUser(saved);
   }
 
   async removeMany(ids: string[]) {
     const result = await this.usersRepository.delete(ids);
+    await this.queryCache?.invalidate('USERS');
     return { deleted: result.affected ?? 0 };
+  }
+
+  private async restrictTenant(query: SelectQueryBuilder<User>, actorId?: string) {
+    if (!this.tenants || !actorId) return;
+    const owners = await this.usersRepository.find({ select: { id: true } });
+    const ids = owners.filter((user) => this.tenants!.sameTenant(actorId, user.id)).map((user) => user.id);
+    query.andWhere('user.id IN (:...tenantUserIds)', { tenantUserIds: ids.length ? ids : [actorId] });
   }
 
   private publicUser(user: User) {

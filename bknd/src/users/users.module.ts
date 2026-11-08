@@ -5,6 +5,8 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { UsersController } from './users.controller.js';
 import { User } from './user.entity.js';
 import { UsersService } from './users.service.js';
+import { AiJwtAuthGuard } from '../ai-agent/ai-jwt-auth.guard.js';
+import { AdminGuard } from './admin.guard.js';
 
 @Module({
   imports: [
@@ -18,6 +20,7 @@ import { UsersService } from './users.service.js';
     }),
   ],
   controllers: [UsersController],
-  providers: [UsersService],
+  providers: [UsersService, AiJwtAuthGuard, AdminGuard],
+  exports: [UsersService],
 })
 export class UsersModule {}

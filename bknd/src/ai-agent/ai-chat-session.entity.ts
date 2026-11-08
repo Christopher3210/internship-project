@@ -1,12 +1,22 @@
 import { Column, CreateDateColumn, Entity, Index, JoinColumn, ManyToOne, PrimaryGeneratedColumn, RelationId, UpdateDateColumn } from 'typeorm';
 import { User } from '../users/user.entity.js';
 
+export type AiChatToolResult = {
+  toolName?: string;
+  input?: Record<string, unknown>;
+  code: number;
+  data: unknown;
+  message: string;
+  resultType: 'text' | 'table' | 'chart' | 'report';
+};
+
 export type AiChatMessage = {
   id: string;
   role: 'user' | 'assistant';
   content: string;
   createdAt: string;
   attachments?: AiChatAttachment[];
+  toolResults?: AiChatToolResult[];
 };
 
 export type AiChatAttachment = {

@@ -1,6 +1,7 @@
-import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException, Optional } from '@nestjs/common';
+import { AiTenantScopeService } from './ai-tenant-scope.service.js';
 import { InjectRepository } from '@nestjs/typeorm';
-import { createHash, randomUUID } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 import { Repository, SelectQueryBuilder } from 'typeorm';
 import { User } from '../users/user.entity.js';
 import { AiChatSession, type AiChatMessage } from './ai-chat-session.entity.js';
@@ -13,11 +14,11 @@ import type { AiProviderName, CreateChatSessionDto, UpdateChatSessionDto } from 
 import type { SendChatMessageDto } from './dto/send-chat-message.dto.js';
 import type { AiPageQueryDto, CreateAiAuditDto, CreateAiMemoryDto, CreateAiTaskDto, UpdateAiAuditDto, UpdateAiMemoryDto, UpdateAiTaskDto } from './dto/ai-resource.dto.js';
 import { AiModelService } from './ai-model.service.js';
-import { AiAgentToolsService } from './ai-agent-tools.service.js';
+import { ToolRegistryService } from './tools/tool-registry.service.js';
+import type { AiToolExecutionResult } from './tools/base-tool.js';
 import { AiAgentMemoryService } from './ai-agent-memory.service.js';
 
 const SESSION_TTL_SECONDS = 2 * 60 * 60;
-const CHAT_CACHE_TTL_SECONDS = 10 * 60;
 const TASK_STATE_TTL_SECONDS = 24 * 60 * 60;
 
 @Injectable()
@@ -29,9 +30,10 @@ export class AiAgentService {
     @InjectRepository(AiOperationAudit) private readonly audits: Repository<AiOperationAudit>,
     @InjectRepository(User) private readonly users: Repository<User>,
     private readonly aiModelService: AiModelService,
-    private readonly agentTools: AiAgentToolsService,
+    private readonly toolRegistry: ToolRegistryService,
     private readonly redis: AiRedisService,
     private readonly memoryContext: AiAgentMemoryService,
+    @Optional() private readonly tenantScope?: AiTenantScopeService,
   ) {}
 
   async findAllSessions(actor: AiAuthenticatedUser, query: AiPageQueryDto) {
@@ -83,6 +85,12 @@ export class AiAgentService {
     return saved;
   }
 
+  async closeSession(id: string, actor: AiAuthenticatedUser) {
+    await this.findSessionForActor(id, actor);
+    await this.redis.delete(`ai:session:${actor.id}:${id}`);
+    return { closed: true, id };
+  }
+
   async deleteSession(id: string, actor: AiAuthenticatedUser) {
     const session = await this.findSessionForActor(id, actor);
     await this.sessions.remove(session);
@@ -108,22 +116,24 @@ export class AiAgentService {
     const savedMemories = await this.memoryContext.buildContext(actor.id);
     const memoryContext = savedMemories.length ? JSON.stringify(savedMemories).slice(0, 6_000) : '';
     const provider = (session.provider || this.aiModelService.getDefaultProvider()) as AiProviderName;
-    const promptIdentity = modelContext.map(({ role, content, attachments }) => ({ role, content, attachments }));
-    const digest = createHash('sha256').update(JSON.stringify({ provider, model: session.model, toolVersion: 'company-search-task-v8', memoryContext, messages: promptIdentity })).digest('hex');
-    const cacheKey = `ai:chat_cache:${ownerId}:${digest}`;
-    let reply = await this.redis.get<{ content: string; model: string }>(cacheKey);
+    // Cache read-only tool results, not model decisions or side effects.
+    let reply: { content: string; model: string; toolResults?: AiToolExecutionResult[] } | undefined;
     if (!reply) {
+      const toolResults: AiToolExecutionResult[] = [];
       reply = await this.aiModelService.generateReply(provider, modelContext, async (toolName, args) => {
-        const result = await this.agentTools.execute(toolName, args, actor);
-        const taskId = typeof result === 'object' && result !== null && 'taskId' in result && typeof result.taskId === 'string'
-          ? result.taskId
-          : null;
-        await this.writeAudit(actor.id, 'agent.tool.invoke', toolName, taskId, { toolName });
+        const result = await this.toolRegistry.execute(toolName, args, { actor, ip: actor.ip });
+        toolResults.push({ ...result, toolName, input: args });
         return result;
       }, memoryContext);
-      await this.redis.set(cacheKey, reply, CHAT_CACHE_TTL_SECONDS);
+      reply.toolResults = toolResults;
     }
-    const assistantMessage: AiChatMessage = { id: randomUUID(), role: 'assistant', content: reply.content, createdAt: new Date().toISOString() };
+    const assistantMessage: AiChatMessage = {
+      id: randomUUID(),
+      role: 'assistant',
+      content: reply.content,
+      toolResults: reply.toolResults ?? [],
+      createdAt: new Date().toISOString(),
+    };
 
     if (session.title === 'New chat') session.title = (content || attachments[0]?.name || 'New chat').slice(0, 40);
     session.provider = provider;
@@ -133,6 +143,16 @@ export class AiAgentService {
     await this.redis.set(sessionKey, saved.messages.slice(-20), SESSION_TTL_SECONDS);
     await this.writeAudit(actor.id, 'session.message', 'ai_chat_sessions', id, { provider, messageCount: saved.messages.length });
     return saved;
+  }
+
+  async getResultPage(id: string, messageId: string, index: number, page: number, actor: AiAuthenticatedUser) {
+    const session = await this.findSessionForActor(id, actor);
+    if (session.userId !== actor.id) throw new NotFoundException('Chat session not found');
+    const result = session.messages.find((message) => message.id === messageId && message.role === 'assistant')?.toolResults?.[index];
+    if (!result || result.code !== 200 || !result.input || !['search_companies_table', 'search_users'].includes(result.toolName ?? '')) {
+      throw new BadRequestException('This saved result cannot be paginated. Please run the search again.');
+    }
+    return this.toolRegistry.execute(result.toolName!, { ...result.input, page }, { actor, ip: actor.ip });
   }
 
   async listMemories(actor: AiAuthenticatedUser, query: AiPageQueryDto) {
@@ -161,7 +181,7 @@ export class AiAgentService {
   async findMemory(id: string, actor: AiAuthenticatedUser) {
     const qb = this.memories.createQueryBuilder('memory').where('memory.id = :id AND (memory.expiresAt IS NULL OR memory.expiresAt > NOW())', { id });
     const user = await this.users.findOne({ where: { id: actor.id }, select: { id: true, role: true } });
-    if (user?.role.toLowerCase() !== 'admin') qb.andWhere('memory.owner = :userId', { userId: actor.id });
+    qb.andWhere('memory.owner = :userId', { userId: actor.id });
     const item = await qb.getOne();
     if (!item) throw new NotFoundException('Memory not found');
     return item;
@@ -221,8 +241,13 @@ export class AiAgentService {
 
   async updateTask(id: string, dto: UpdateAiTaskDto, actor: AiAuthenticatedUser) {
     const task = await this.findTask(id, actor);
-    if (dto.status !== undefined) task.status = dto.status;
-    if (dto.progress !== undefined) task.progress = dto.progress;
+    if (['company_search', 'company_profile_summary'].includes(task.taskType)) throw new ConflictException('Execution-managed task state cannot be edited manually');
+    if (['completed', 'failed'].includes(task.status)) throw new ConflictException('Finished tasks cannot be changed');
+    const status = dto.status ?? (dto.progress !== undefined ? (dto.progress === 0 ? 'queued' : dto.progress === 100 ? 'completed' : 'running') : task.status);
+    const progress = dto.progress ?? (status === 'completed' ? 100 : status === 'queued' ? 0 : task.progress);
+    if ((status === 'queued' && progress !== 0) || (status === 'completed' && progress !== 100) || (status === 'running' && progress >= 100)) throw new BadRequestException('Task status and progress are inconsistent');
+    task.status = status;
+    task.progress = progress;
     if (dto.input !== undefined) task.input = dto.input;
     if (dto.result !== undefined) task.result = dto.result;
     if (dto.error !== undefined) task.error = dto.error;
@@ -280,7 +305,13 @@ export class AiAgentService {
 
   private async applyOwnerFilter(qb: SelectQueryBuilder<AiChatSession> | SelectQueryBuilder<AiTaskRecord> | SelectQueryBuilder<AiOperationAudit> | SelectQueryBuilder<AiUserMemory>, alias: string, actor: AiAuthenticatedUser, requestedUserId?: string) {
     const user = await this.users.findOne({ where: { id: actor.id }, select: { id: true, role: true } });
-    const isAdmin = user?.role.toLowerCase() === 'admin';
+    const isAdmin = alias === 'audit' && user?.role.toLowerCase() === 'admin';
+    if (isAdmin && this.tenantScope) {
+      const owners = await this.users.find({ select: { id: true } });
+      const ownerIds = owners.filter((owner) => this.tenantScope!.sameTenant(actor.id, owner.id)).map((owner) => owner.id);
+      qb.andWhere(`(${alias}.owner IN (:...tenantOwnerIds) OR (${alias}.owner IS NULL AND ${alias}.tenantId = :auditTenant))`, { tenantOwnerIds: ownerIds.length ? ownerIds : [actor.id], auditTenant: this.tenantScope.tenantFor(actor.id) });
+      if (requestedUserId && !this.tenantScope.sameTenant(actor.id, requestedUserId)) throw new ForbiddenException('Cannot query another tenant');
+    }
     if (requestedUserId && !isAdmin && requestedUserId !== actor.id) throw new ForbiddenException('Cannot query another user’s AI data');
     const ownerId = isAdmin ? requestedUserId : actor.id;
     if (ownerId) qb.andWhere(`${alias}.owner = :ownerId`, { ownerId });
@@ -291,7 +322,7 @@ export class AiAgentService {
   private async findSessionForActor(id: string, actor: AiAuthenticatedUser) {
     const qb = this.sessions.createQueryBuilder('session').where('session.id = :id', { id });
     const user = await this.users.findOne({ where: { id: actor.id }, select: { id: true, role: true } });
-    if (user?.role.toLowerCase() !== 'admin') qb.andWhere('session.owner = :userId', { userId: actor.id });
+    qb.andWhere('session.owner = :userId', { userId: actor.id });
     const session = await qb.getOne();
     if (!session) throw new NotFoundException('Chat session not found');
     return session;
@@ -300,8 +331,13 @@ export class AiAgentService {
   private async findOwnedOrAdmin<T extends AiUserMemory | AiTaskRecord | AiOperationAudit>(repository: Repository<T>, alias: string, id: string, actor: AiAuthenticatedUser) {
     const qb = repository.createQueryBuilder(alias).where(`${alias}.id = :id`, { id });
     const user = await this.users.findOne({ where: { id: actor.id }, select: { id: true, role: true } });
-    if (user?.role.toLowerCase() !== 'admin') qb.andWhere(`${alias}.owner = :userId`, { userId: actor.id });
-    return qb.getOne();
+    if (alias !== 'audit' || user?.role.toLowerCase() !== 'admin') qb.andWhere(`${alias}.owner = :userId`, { userId: actor.id });
+    const item = await qb.getOne();
+    if (item && alias === 'audit' && this.tenantScope) {
+      const permitted = item.userId ? this.tenantScope.sameTenant(actor.id, item.userId) : (item as AiOperationAudit).tenantId === this.tenantScope.tenantFor(actor.id);
+      if (!permitted) throw new NotFoundException('Audit record not found');
+    }
+    return item;
   }
 
   private async requireAdmin(userId: string) {

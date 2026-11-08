@@ -17,18 +17,48 @@ import { CompaniesModule } from '../companies/companies.module.js';
 import { AiAgentToolsService } from './ai-agent-tools.service.js';
 import { AiAgentTaskExecutionService } from './ai-agent-task-execution.service.js';
 import { AiAgentMemoryService } from './ai-agent-memory.service.js';
+import { AI_AGENT_TOOLS, ToolRegistryService } from './tools/tool-registry.service.js';
+import { ToolExecutionAuditService } from './tools/tool-execution-audit.service.js';
+import { AiToolPermissionService } from './tools/tool-permission.service.js';
+import { UserQueryTool } from './tools/user-query.tool.js';
+import { CompanyQueryTool } from './tools/company-query.tool.js';
+import { DashboardMetricsTool } from './tools/dashboard-metrics.tool.js';
+import { UsersModule } from '../users/users.module.js';
+import { AiAuditTenantSubscriber } from './ai-audit-tenant.subscriber.js';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([AiChatSession, AiUserMemory, AiTaskRecord, AiOperationAudit, User]),
     DashboardModule,
     CompaniesModule,
+    UsersModule,
     JwtModule.registerAsync({
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({ secret: config.getOrThrow<string>('JWT_SECRET') }),
     }),
   ],
   controllers: [AiAgentController],
-  providers: [AiAgentService, AiModelService, AiAgentToolsService, AiAgentTaskExecutionService, AiAgentMemoryService, AiJwtAuthGuard, AiRedisService],
+  providers: [
+    AiAgentService,
+    AiAuditTenantSubscriber,
+    AiModelService,
+    AiAgentToolsService,
+    AiAgentTaskExecutionService,
+    AiAgentMemoryService,
+    AiJwtAuthGuard,
+    ToolRegistryService,
+    ToolExecutionAuditService,
+    UserQueryTool,
+    CompanyQueryTool,
+    DashboardMetricsTool,
+    {
+      provide: AI_AGENT_TOOLS,
+      useFactory: (legacyTools: AiAgentToolsService, userQuery: UserQueryTool, companyQuery: CompanyQueryTool, dashboardMetrics: DashboardMetricsTool) => [
+        ...legacyTools.getToolAdapters(), userQuery, companyQuery, dashboardMetrics,
+      ],
+      inject: [AiAgentToolsService, UserQueryTool, CompanyQueryTool, DashboardMetricsTool],
+    },
+    AiToolPermissionService,
+  ],
 })
 export class AiAgentModule {}

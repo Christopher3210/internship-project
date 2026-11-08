@@ -1,14 +1,24 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, SelectQueryBuilder } from 'typeorm';
 import { Company } from '../companies/company.entity.js';
+import { normalizeCountry } from '../companies/normalize-country.js';
+
+export type DashboardCompanyFilters = {
+  fromYear?: number;
+  toYear?: number;
+  country?: string;
+  countries?: string[];
+  levels?: number[];
+};
 
 @Injectable()
 export class DashboardService {
   constructor(@InjectRepository(Company) private readonly companiesRepository: Repository<Company>) {}
 
-  async getSummary() {
-    const summary = await this.companiesRepository.createQueryBuilder('company')
+  async getSummary(filters: DashboardCompanyFilters = {}) {
+    const query = this.applyFilters(this.companiesRepository.createQueryBuilder('company'), filters);
+    const summary = await query
       .select('COUNT(company.companyCode)', 'companyCount')
       .addSelect('COALESCE(SUM(company.annualRevenue), 0)', 'totalRevenue')
       .addSelect('COUNT(DISTINCT company.country)', 'countryCount')
@@ -23,8 +33,9 @@ export class DashboardService {
     };
   }
 
-  async getLevelDistribution() {
-    const rows = await this.companiesRepository.createQueryBuilder('company')
+  async getLevelDistribution(filters: DashboardCompanyFilters = {}) {
+    const query = this.applyFilters(this.companiesRepository.createQueryBuilder('company'), filters);
+    const rows = await query
       .select('company.level', 'level')
       .addSelect('COUNT(company.companyCode)', 'companyCount')
       .groupBy('company.level')
@@ -46,8 +57,9 @@ export class DashboardService {
     };
   }
 
-  async getFoundedYearTrend() {
-    const rows = await this.companiesRepository.createQueryBuilder('company')
+  async getFoundedYearTrend(filters: DashboardCompanyFilters = {}) {
+    const query = this.applyFilters(this.companiesRepository.createQueryBuilder('company'), filters);
+    const rows = await query
       .select('company.foundedYear', 'year')
       .addSelect('COUNT(company.companyCode)', 'newCompanies')
       .groupBy('company.foundedYear')
@@ -73,5 +85,14 @@ export class DashboardService {
     }
 
     return { years };
+  }
+
+  private applyFilters(query: SelectQueryBuilder<Company>, filters: DashboardCompanyFilters) {
+    if (filters.fromYear !== undefined) query.andWhere('company.foundedYear >= :fromYear', { fromYear: filters.fromYear });
+    if (filters.toYear !== undefined) query.andWhere('company.foundedYear <= :toYear', { toYear: filters.toYear });
+    if (filters.country?.trim()) query.andWhere('LOWER(company.country) = LOWER(:country)', { country: normalizeCountry(filters.country) });
+    if (filters.countries?.length) query.andWhere('company.country IN (:...countries)', { countries: filters.countries.map(normalizeCountry) });
+    if (filters.levels?.length) query.andWhere('company.level IN (:...levels)', { levels: filters.levels });
+    return query;
   }
 }

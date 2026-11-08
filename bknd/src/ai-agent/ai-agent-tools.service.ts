@@ -4,6 +4,22 @@ import { DashboardService } from '../dashboard/dashboard.service.js';
 import { AiAgentTaskExecutionService } from './ai-agent-task-execution.service.js';
 import type { AiAuthenticatedUser } from './ai-current-user.js';
 import { AiAgentMemoryService } from './ai-agent-memory.service.js';
+import { BaseTool, type AiToolContext, type AiToolInput, type AiToolJsonSchema, type AiToolPayload, type AiToolResultType } from './tools/base-tool.js';
+
+class RegisteredFunctionTool extends BaseTool {
+  constructor(
+    readonly name: string,
+    readonly description: string,
+    readonly intent: 'QUERY_DATA' | 'STATISTICS_ANALYSIS',
+    readonly requiredPermission: string,
+    readonly parameters: AiToolJsonSchema,
+    private readonly handler: (input: AiToolInput, context: AiToolContext) => Promise<AiToolPayload>,
+  ) { super(); }
+
+  execute(input: AiToolInput, context: AiToolContext) {
+    return this.handler(input, context);
+  }
+}
 
 /** A small allowlist of read-only project operations available to the model. */
 @Injectable()
@@ -135,6 +151,50 @@ export class AiAgentToolsService {
         },
       },
     ];
+  }
+
+  getToolAdapters(): BaseTool[] {
+    const permissionByTool: Record<string, string> = {
+      get_company_summary: 'ai:dashboard:read',
+      search_companies: 'ai:companies:read',
+      list_my_memories: 'ai:memory:read',
+      remember_user_preference: 'ai:memory:write',
+      forget_user_memory: 'ai:memory:write',
+      list_my_tasks: 'ai:tasks:read',
+      set_task_progress: 'ai:tasks:write',
+      start_company_search_task: 'ai:tasks:write',
+      start_company_profile_summary: 'ai:tasks:write',
+    };
+    const intentByTool: Record<string, 'QUERY_DATA' | 'STATISTICS_ANALYSIS'> = {
+      get_company_summary: 'STATISTICS_ANALYSIS',
+      search_companies: 'QUERY_DATA',
+      list_my_memories: 'QUERY_DATA',
+      remember_user_preference: 'QUERY_DATA',
+      forget_user_memory: 'QUERY_DATA',
+      list_my_tasks: 'QUERY_DATA',
+      set_task_progress: 'QUERY_DATA',
+      start_company_search_task: 'QUERY_DATA',
+      start_company_profile_summary: 'QUERY_DATA',
+    };
+    const resultTypeByTool: Record<string, AiToolResultType> = {
+      get_company_summary: 'report',
+      search_companies: 'table',
+      list_my_memories: 'table',
+      list_my_tasks: 'table',
+    };
+
+    return this.getDefinitions().map(({ function: definition }) => new RegisteredFunctionTool(
+      definition.name,
+      definition.description,
+      intentByTool[definition.name] ?? 'QUERY_DATA',
+      permissionByTool[definition.name] ?? 'ai:tool:unmapped',
+      definition.parameters as AiToolJsonSchema,
+      async (input, context) => ({
+        data: await this.execute(definition.name, input, context.actor),
+        message: '工具执行成功。',
+        resultType: resultTypeByTool[definition.name] ?? 'text',
+      }),
+    ));
   }
 
   async execute(name: string, args: Record<string, unknown> = {}, actor?: AiAuthenticatedUser) {

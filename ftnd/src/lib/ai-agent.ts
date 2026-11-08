@@ -31,6 +31,15 @@ export type StructuredMessage =
   | { type: 'report'; title: string; summary: string; sections: Array<{ title: string; content: string }> }
   | { type: 'confirmation'; title: string; message: string; confirmLabel?: string };
 
+export type ToolResult = {
+  toolName?: string;
+  input?: Record<string, unknown>;
+  code: number;
+  data: unknown;
+  message: string;
+  resultType: 'text' | 'table' | 'chart' | 'report';
+};
+
 export type ChatMessage = {
   id: string;
   role: 'user' | 'assistant';
@@ -38,6 +47,7 @@ export type ChatMessage = {
   createdAt: string;
   attachments?: ChatAttachment[];
   structured?: StructuredMessage;
+  toolResults?: ToolResult[];
 };
 
 export type ChatSession = {

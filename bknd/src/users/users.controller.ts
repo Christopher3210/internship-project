@@ -1,4 +1,7 @@
-import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Patch, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import { AiJwtAuthGuard } from '../ai-agent/ai-jwt-auth.guard.js';
+import { AdminGuard } from './admin.guard.js';
+import { AiCurrentUser, type AiAuthenticatedUser } from '../ai-agent/ai-current-user.js';
 import {
   ApiBadRequestResponse,
   ApiBody,
@@ -45,6 +48,7 @@ export class UsersController {
   }
 
   @Get()
+  @UseGuards(AiJwtAuthGuard, AdminGuard)
   @ApiOperation({ summary: 'List users with optional filters' })
   @ApiQuery({
     name: 'name',
@@ -59,11 +63,12 @@ export class UsersController {
     description: 'Filter by role; separate multiple roles with commas, for example Member,Admin',
   })
   @ApiOkResponse({ description: 'Users ordered by creation time, newest first', type: UserResponseDto, isArray: true })
-  findAll(@Query('name') name?: string, @Query('roles') roles?: string) {
-    return this.usersService.findAll(name, roles);
+  findAll(@AiCurrentUser() actor: AiAuthenticatedUser, @Query('name') name?: string, @Query('roles') roles?: string) {
+    return this.usersService.findAll(name, roles, actor.id);
   }
 
   @Post()
+  @UseGuards(AiJwtAuthGuard, AdminGuard)
   @ApiOperation({ summary: 'Create a user' })
   @ApiCreatedResponse({ description: 'User created', type: UserResponseDto })
   @ApiBadRequestResponse({ description: 'Request body validation failed' })
@@ -73,6 +78,7 @@ export class UsersController {
   }
 
   @Patch(':id')
+  @UseGuards(AiJwtAuthGuard, AdminGuard)
   @ApiOperation({ summary: 'Update a user' })
   @ApiParam({ name: 'id', description: 'User UUID', format: 'uuid', example: '3fa85f64-5717-4562-b3fc-2c963f66afa6' })
   @ApiOkResponse({ description: 'Updated user', type: UserResponseDto })
@@ -84,6 +90,7 @@ export class UsersController {
   }
 
   @Delete()
+  @UseGuards(AiJwtAuthGuard, AdminGuard)
   @ApiOperation({ summary: 'Delete multiple users' })
   @ApiBody({ type: DeleteUsersDto })
   @ApiOkResponse({ description: 'Number of users actually deleted', type: DeleteUsersResponseDto })

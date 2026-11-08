@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, ParseIntPipe, ParseUUIDPipe, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { ApiBadRequestResponse, ApiBearerAuth, ApiCreatedResponse, ApiNotFoundResponse, ApiOkResponse, ApiOperation, ApiParam, ApiQuery, ApiTags, ApiUnauthorizedResponse } from '@nestjs/swagger';
 import { AiAgentService } from './ai-agent.service.js';
 import { AiCurrentUser, type AiAuthenticatedUser } from './ai-current-user.js';
@@ -63,12 +63,24 @@ export class AiAgentController {
     return this.aiAgentService.deleteSession(id, actor);
   }
 
+  @Post('sessions/:id/close')
+  @ApiOperation({ summary: 'Clear short-term context while retaining PostgreSQL conversation history' })
+  closeSession(@Param('id', new ParseUUIDPipe()) id: string, @AiCurrentUser() actor: AiAuthenticatedUser) {
+    return this.aiAgentService.closeSession(id, actor);
+  }
+
   @Post('sessions/:id/messages')
   @ApiOperation({ summary: 'Send a message in an owned session and persist the reply' })
   @ApiParam({ name: 'id', format: 'uuid' })
   @ApiOkResponse({ type: AiChatSessionResponseDto })
   sendMessage(@Param('id', new ParseUUIDPipe()) id: string, @Body() dto: SendChatMessageDto, @AiCurrentUser() actor: AiAuthenticatedUser) {
     return this.aiAgentService.sendMessage(id, dto, actor);
+  }
+
+  @Get('sessions/:id/messages/:messageId/results/:index')
+  @ApiOperation({ summary: 'Read another page of an owned saved query using its original filters' })
+  getResultPage(@Param('id', new ParseUUIDPipe()) id: string, @Param('messageId', new ParseUUIDPipe()) messageId: string, @Param('index', ParseIntPipe) index: number, @Query() query: AiPageQueryDto, @AiCurrentUser() actor: AiAuthenticatedUser) {
+    return this.aiAgentService.getResultPage(id, messageId, index, query.page, actor);
   }
 
   @Get('memory')
@@ -94,7 +106,7 @@ export class AiAgentController {
   deleteMemory(@Param('id', new ParseUUIDPipe()) id: string, @AiCurrentUser() actor: AiAuthenticatedUser) { return this.aiAgentService.deleteMemory(id, actor); }
 
   @Get('tasks')
-  @ApiOperation({ summary: 'List AI tasks; admins may filter all users by userId' })
+  @ApiOperation({ summary: 'List tasks owned by the authenticated user' })
   @ApiOkResponse({ type: AiPageResponseDto })
   @ApiQuery({ name: 'userId', required: false, format: 'uuid' })
   listTasks(@AiCurrentUser() actor: AiAuthenticatedUser, @Query() query: AiPageQueryDto) { return this.aiAgentService.listTasks(actor, query); }
