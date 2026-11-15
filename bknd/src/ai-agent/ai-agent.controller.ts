@@ -1,4 +1,7 @@
-import { Body, Controller, Delete, Get, Param, ParseIntPipe, ParseUUIDPipe, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, ParseIntPipe, ParseUUIDPipe, Patch, Post, Query, UseGuards, HttpCode, HttpException, Req } from '@nestjs/common';
+import type { Request } from 'express';
+import { ToolRegistryService } from './tools/tool-registry.service.js';
+import { ToolRequestDto } from './dto/tool-request.dto.js';
 import { ApiBadRequestResponse, ApiBearerAuth, ApiCreatedResponse, ApiNotFoundResponse, ApiOkResponse, ApiOperation, ApiParam, ApiQuery, ApiTags, ApiUnauthorizedResponse } from '@nestjs/swagger';
 import { AiAgentService } from './ai-agent.service.js';
 import { AiCurrentUser, type AiAuthenticatedUser } from './ai-current-user.js';
@@ -15,7 +18,30 @@ import { SendChatMessageDto } from './dto/send-chat-message.dto.js';
 @UseGuards(AiJwtAuthGuard)
 @Controller('ai-agent')
 export class AiAgentController {
-  constructor(private readonly aiAgentService: AiAgentService) {}
+  constructor(private readonly aiAgentService: AiAgentService, private readonly tools: ToolRegistryService) {}
+
+  @Get('tools/write-capabilities')
+  @ApiOperation({ summary: 'List write-tool contracts; all business write execution remains disabled' })
+  writeCapabilities() { return this.tools.listWriteTools(); }
+
+  @Post('tools/:name/preview')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'Validate a business write and return a redacted preview; never executes writes' })
+  async previewTool(@Param('name') name: string, @Body() dto: ToolRequestDto, @AiCurrentUser() actor: AiAuthenticatedUser, @Req() req: Request) {
+    const result = await this.tools.preview(name, dto.input, { actor, ip: req.ip });
+    if (result.code !== 200) throw new HttpException(result.error ?? result, result.code);
+    return result;
+  }
+
+  @Post('tools/:name/query')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'Verify one of the three core read tools through the authenticated audited registry' })
+  async queryTool(@Param('name') name: string, @Body() dto: ToolRequestDto, @AiCurrentUser() actor: AiAuthenticatedUser, @Req() req: Request) {
+    if (!['search_users', 'search_companies_table', 'get_dashboard_metrics'].includes(name)) throw new HttpException('Only core read tools are supported', 400);
+    const result = await this.tools.execute(name, dto.input, { actor, ip: req.ip });
+    if (result.code !== 200) throw new HttpException(result, result.code);
+    return result;
+  }
 
   @Get('providers')
   @ApiOperation({ summary: 'List available AI providers without exposing API keys' })

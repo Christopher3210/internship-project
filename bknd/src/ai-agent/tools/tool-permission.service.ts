@@ -13,6 +13,8 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     'ai:tasks:write',
   ],
   admin: [
+    'ai:users:write',
+    'ai:companies:write',
     'ai:users:read',
     'ai:companies:read',
     'ai:dashboard:read',

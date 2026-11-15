@@ -101,10 +101,12 @@ export class AiModelService {
       if (toolExecutor && /compan(?:y|ies)|supplier|\u516c\u53f8|\u4f9b\u5e94\u5546/i.test(latest.content) && /search|find|query|list|\u67e5\u8be2|\u67e5\u627e|\u641c\u7d22/i.test(latest.content)) {
         const name = latest.content.match(/[\"']([^\"']+)[\"']/)?.[1];
         const level = latest.content.match(/(?:level|\u7b49\u7ea7|L)\s*[:=]?\s*([1-4])/i)?.[1];
-        const execution = await toolExecutor('search_companies_table', { ...(name ? { name } : {}), ...(level ? { levels: [Number(level)] } : {}), page: 1, pageSize: 20 }) as { code: number; message: string };
+        const country = /日本|\bJapan\b|\bJP\b/i.test(latest.content) ? 'Japan'
+          : /美国|\bUSA\b|\bUnited States\b/i.test(latest.content) ? 'USA' : undefined;
+        const execution = await toolExecutor('search_companies_table', { ...(name ? { name } : {}), ...(country ? { country } : {}), ...(level ? { levels: [Number(level)] } : {}), page: 1, pageSize: 20 }) as { code: number; message: string };
         return { content: execution.code >= 400 ? execution.message : 'Company results are shown in the expandable table below.', model: providerConfig.model };
       }
-      if (toolExecutor && /compan(?:y|ies)|supplier|\u516c\u53f8/i.test(latest.content) && /how many|count|metrics|statistics|dashboard|\u591a\u5c11|\u7edf\u8ba1/i.test(latest.content)) {
+      if (toolExecutor && /compan(?:y|ies)|supplier|dashboard|\u516c\u53f8/i.test(latest.content) && /how many|count|metrics|statistics|dashboard|\u591a\u5c11|\u7edf\u8ba1/i.test(latest.content)) {
         const execution = await toolExecutor('get_dashboard_metrics', {}) as { code: number; message: string; data: { summary?: { companyCount?: number; countryCount?: number; employeeCount?: number } } };
         const summary = execution.data?.summary;
         return {

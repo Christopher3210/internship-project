@@ -12,7 +12,10 @@ const PHONE_VALUE = /\+?\d[\d\s().-]{6,}\d/g;
 export function redactAuditValue(value: unknown, key = ''): unknown {
   if (SENSITIVE_FIELD.test(key)) return '[REDACTED]';
   if (typeof value === 'string') {
-    return value.replace(EMAIL_VALUE, '[REDACTED_EMAIL]').replace(PHONE_VALUE, (match) => {
+    return value.replace(/\bsk-[A-Za-z0-9_-]{12,}\b/g, '[REDACTED_SECRET]')
+      .replace(/\bBearer\s+[^\s,;]+/gi, 'Bearer [REDACTED_TOKEN]')
+      .replace(/\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/g, '[REDACTED_TOKEN]')
+      .replace(EMAIL_VALUE, '[REDACTED_EMAIL]').replace(PHONE_VALUE, (match) => {
       const digitCount = match.replace(/\D/g, '').length;
       return digitCount >= 7 && digitCount <= 15 ? '[REDACTED_PHONE]' : match;
     });
@@ -37,6 +40,7 @@ export class ToolExecutionAuditService {
     context: AiToolContext,
     result?: AiToolExecutionResult,
     error?: unknown,
+    metadata?: { operationType: string; durationMs: number },
   ) {
     const outcome = result ?? {
       code: 500,
@@ -47,7 +51,8 @@ export class ToolExecutionAuditService {
     const details = redactAuditValue({
       userId: context.actor?.id ?? null,
       toolName,
-      operationType: 'execute',
+      operationType: metadata?.operationType ?? 'execute',
+      durationMs: metadata?.durationMs,
       input,
       executionResult: outcome,
       requestId: context.requestId,
@@ -55,7 +60,7 @@ export class ToolExecutionAuditService {
 
     await this.audits.save(this.audits.create({
       owner: context.actor?.id ? { id: context.actor.id } as User : null,
-      action: 'tool.execute',
+      action: metadata?.operationType === 'preview' ? 'tool.preview' : 'tool.execute',
       resourceType: toolName,
       resourceId: null,
       ipAddress: context.ip ?? null,

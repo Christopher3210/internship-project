@@ -26,6 +26,7 @@ export function AuditToolExecution() {
       context: AiToolContext,
     ) {
       let result: AiToolExecutionResult | undefined;
+      const started = performance.now();
       let thrown: unknown;
       try {
         result = await original.call(this, name, input, context);
@@ -34,7 +35,7 @@ export function AuditToolExecution() {
         thrown = error;
         throw error;
       } finally {
-        await this.toolExecutionAudit.recordInvocation(name, input, context, result, thrown);
+        await this.toolExecutionAudit.recordInvocation(name, input, context, result, thrown, { operationType: String(_propertyKey), durationMs: Math.round((performance.now() - started) * 100) / 100 });
       }
     };
     return descriptor;

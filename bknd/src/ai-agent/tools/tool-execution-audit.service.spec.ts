@@ -2,6 +2,11 @@ import { describe, expect, it, vi } from 'vitest';
 import { redactAuditValue, ToolExecutionAuditService } from './tool-execution-audit.service.js';
 
 describe('ToolExecutionAuditService', () => {
+  it('redacts credential-like text even inside ordinary messages', () => {
+    const input = 'sk-test_NOT_A_REAL_KEY_123456 Bearer fixture-token eyJfixture.payload.signature';
+    const output = String(redactAuditValue(input));
+    expect(output).not.toContain('sk-test'); expect(output).not.toContain('fixture-token'); expect(output).not.toContain('eyJfixture');
+  });
   it('redacts financial and contact fields recursively', () => {
     expect(redactAuditValue({
       annualRevenue: 1_200_000,

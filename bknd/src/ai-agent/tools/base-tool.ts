@@ -1,6 +1,6 @@
 import type { AiAuthenticatedUser } from '../ai-current-user.js';
 
-export type AiToolIntent = 'QUERY_DATA' | 'STATISTICS_ANALYSIS';
+export type AiToolIntent = 'QUERY_DATA' | 'STATISTICS_ANALYSIS' | 'WRITE_DATA';
 export type AiToolResultType = 'text' | 'table' | 'chart' | 'report';
 
 export type AiToolJsonSchema = {
@@ -34,6 +34,8 @@ export type AiToolExecutionResult<T = unknown> = AiToolPayload<T> & {
   toolName?: string;
   input?: Record<string, unknown>;
   code: number;
+  error?: unknown;
+  cacheHit?: boolean;
 };
 
 /** Base contract for tools. Implementations should delegate to business Services only. */
@@ -46,7 +48,7 @@ export abstract class BaseTool<TInput extends AiToolInput = AiToolInput, TData =
 
   abstract execute(input: TInput, context: AiToolContext): Promise<AiToolPayload<TData>>;
 
-  async validate(input: AiToolInput): Promise<TInput> {
+  async validate(input: AiToolInput, _context?: AiToolContext): Promise<TInput> {
     return input as TInput;
   }
 

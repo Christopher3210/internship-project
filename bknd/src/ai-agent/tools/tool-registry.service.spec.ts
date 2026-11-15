@@ -34,6 +34,20 @@ function createRegistry(tools: BaseTool[] = [new TestQueryTool()], disabled = ''
 }
 
 describe('ToolRegistryService', () => {
+  it('uses cached reads without reexecuting business logic, but still checks permissions and audits', async () => {
+    const tool = new TestQueryTool();
+    const audit = { recordInvocation: vi.fn() };
+    const permissions = { assertCanExecute: vi.fn() };
+    const cached = { code: 200, data: [{ value: 7 }], message: 'cached', resultType: 'table' };
+    const redis = { get: vi.fn(async () => cached), set: vi.fn() };
+    const registry = new ToolRegistryService({ get: () => '' } as never, [tool], audit as never, permissions as never, { key: async () => ({ key: 'fixture', ttl: 600 }) } as never, redis as never);
+    const context = { actor: { id: 'owner', email: 'owner@example.test' } };
+    expect(await registry.execute('test_query', {}, context)).toMatchObject({ cacheHit: true, data: [{ value: 7 }] });
+    expect(tool.execute).not.toHaveBeenCalled();
+    permissions.assertCanExecute.mockRejectedValue(new ForbiddenException());
+    expect((await registry.execute('test_query', {}, context)).code).toBe(403);
+    expect(redis.get).toHaveBeenCalledOnce(); expect(audit.recordInvocation).toHaveBeenCalledTimes(2);
+  });
   it('registers tools and finds enabled tools by name or intent', () => {
     const { registry } = createRegistry();
 

@@ -102,11 +102,30 @@ export class UsersService {
     };
   }
 
-  async create(createUserDto: CreateUserDto) {
+  async validateCreate(createUserDto: CreateUserDto) {
     const email = createUserDto.email.trim().toLowerCase();
     if (await this.usersRepository.existsBy({ email })) {
       throw new ConflictException('This email is already registered');
     }
+  }
+
+  async validateUpdate(id: string, dto: UpdateUserDto) {
+    const user = await this.usersRepository.findOneBy({ id });
+    if (!user) throw new NotFoundException('User not found');
+    if (dto.email) {
+      const existing = await this.usersRepository.findOneBy({ email: dto.email.trim().toLowerCase() });
+      if (existing && existing.id !== id) throw new ConflictException('This email is already registered');
+    }
+    return this.publicUser(user);
+  }
+
+  async validateDelete(ids: string[]) {
+    for (const id of ids) if (!(await this.usersRepository.existsBy({ id }))) throw new NotFoundException('User not found');
+  }
+
+  async create(createUserDto: CreateUserDto) {
+    await this.validateCreate(createUserDto);
+    const email = createUserDto.email.trim().toLowerCase();
 
     const user = await this.usersRepository.save(this.usersRepository.create({
       name: createUserDto.name.trim(),
@@ -120,6 +139,7 @@ export class UsersService {
   }
 
   async update(id: string, updateUserDto: UpdateUserDto) {
+    await this.validateUpdate(id, updateUserDto);
     const user = await this.usersRepository
       .createQueryBuilder('user')
       .addSelect('user.passwordHash')

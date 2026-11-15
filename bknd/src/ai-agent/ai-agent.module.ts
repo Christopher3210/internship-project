@@ -25,6 +25,8 @@ import { CompanyQueryTool } from './tools/company-query.tool.js';
 import { DashboardMetricsTool } from './tools/dashboard-metrics.tool.js';
 import { UsersModule } from '../users/users.module.js';
 import { AiAuditTenantSubscriber } from './ai-audit-tenant.subscriber.js';
+import { WritePrevalidationService } from './write-tools/write-prevalidation.service.js';
+import { createWriteTools } from './write-tools/business-write-tools.js';
 
 @Module({
   imports: [
@@ -40,6 +42,7 @@ import { AiAuditTenantSubscriber } from './ai-audit-tenant.subscriber.js';
   controllers: [AiAgentController],
   providers: [
     AiAgentService,
+    WritePrevalidationService,
     AiAuditTenantSubscriber,
     AiModelService,
     AiAgentToolsService,
@@ -53,10 +56,10 @@ import { AiAuditTenantSubscriber } from './ai-audit-tenant.subscriber.js';
     DashboardMetricsTool,
     {
       provide: AI_AGENT_TOOLS,
-      useFactory: (legacyTools: AiAgentToolsService, userQuery: UserQueryTool, companyQuery: CompanyQueryTool, dashboardMetrics: DashboardMetricsTool) => [
-        ...legacyTools.getToolAdapters(), userQuery, companyQuery, dashboardMetrics,
+      useFactory: (legacyTools: AiAgentToolsService, userQuery: UserQueryTool, companyQuery: CompanyQueryTool, dashboardMetrics: DashboardMetricsTool, writes: WritePrevalidationService) => [
+        ...legacyTools.getToolAdapters(), userQuery, companyQuery, dashboardMetrics, ...createWriteTools(writes),
       ],
-      inject: [AiAgentToolsService, UserQueryTool, CompanyQueryTool, DashboardMetricsTool],
+      inject: [AiAgentToolsService, UserQueryTool, CompanyQueryTool, DashboardMetricsTool, WritePrevalidationService],
     },
     AiToolPermissionService,
   ],

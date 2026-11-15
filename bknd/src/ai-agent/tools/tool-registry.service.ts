@@ -6,6 +6,7 @@ import { BaseTool, type AiToolContext, type AiToolExecutionResult, type AiToolIn
 import { AuditToolExecution } from './tool-execution-audit.decorator.js';
 import { ToolExecutionAuditService } from './tool-execution-audit.service.js';
 import { AiToolPermissionService } from './tool-permission.service.js';
+import { BaseWriteTool } from '../write-tools/base-write-tool.js';
 
 export const AI_AGENT_TOOLS = Symbol('AI_AGENT_TOOLS');
 
@@ -56,7 +57,29 @@ export class ToolRegistryService implements OnModuleInit {
   }
 
   getDefinitions() {
-    return this.listEnabled().map((tool) => tool.toModelDefinition());
+    return this.listEnabled().filter((tool) => tool.intent !== 'WRITE_DATA').map((tool) => tool.toModelDefinition());
+  }
+
+  /** Administrative inventory only; write entries must never become executable model definitions. */
+  listWriteTools() {
+    return this.listEnabled().filter((tool): tool is BaseWriteTool => tool instanceof BaseWriteTool).map(tool => ({
+      name: tool.name, kind: tool.kind, automaticExecution: tool.automaticExecution,
+      executionEnabled: false, requiredPermission: tool.requiredPermission, parameters: tool.parameters,
+    }));
+  }
+
+  @AuditToolExecution()
+  async preview(name: string, input: AiToolInput, context: AiToolContext): Promise<AiToolExecutionResult> {
+    const tool = this.findByName(name);
+    if (!(tool instanceof BaseWriteTool)) return { code: 404, data: null, message: 'Write tool not found', resultType: 'text' };
+    try {
+      await this.assertPermission(tool.requiredPermission, context);
+      return { code: 200, ...await tool.getPreview(input, context) };
+    } catch (error) {
+      return { code: error instanceof HttpException ? error.getStatus() : 500, data: null,
+        message: error instanceof HttpException ? this.httpErrorMessage(error) : 'Preview failed',
+        error: error instanceof HttpException ? error.getResponse() : undefined, resultType: 'text' };
+    }
   }
 
   /** Runtime override; can later be exposed through an administrator-only config endpoint. */
@@ -76,15 +99,16 @@ export class ToolRegistryService implements OnModuleInit {
 
     try {
       await this.assertPermission(tool.requiredPermission, context);
-      const validatedInput = await tool.validate(input);
+      if (tool.intent === 'WRITE_DATA') throw new ForbiddenException('Business write execution is disabled; preview only');
+      const validatedInput = await tool.validate(input, context);
       const cache = await this.queryCache?.key(context.actor.id, name, validatedInput);
       if (cache && this.redis) {
         const hit = await this.redis.get<AiToolExecutionResult>(cache.key);
-        if (hit) return hit;
+        if (hit) return { ...hit, cacheHit: true };
       }
       const result = await tool.execute(validatedInput, context);
       if (cache && this.redis) await this.redis.set(cache.key, { code: 200, ...result }, cache.ttl);
-      return { code: 200, ...result };
+      return { code: 200, ...result, cacheHit: false };
     } catch (error) {
       const code = error instanceof HttpException ? error.getStatus() : 500;
       const message = error instanceof HttpException

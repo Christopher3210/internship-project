@@ -136,9 +136,24 @@ export class CompaniesService implements OnModuleInit {
       .getOne();
   }
 
-  async create(dto: CreateCompanyDto) {
+  async validateCreate(dto: CreateCompanyDto) {
     const companyCode = dto.companyCode.trim();
     if (await this.companiesRepository.existsBy({ companyCode })) throw new ConflictException('Company code already exists');
+  }
+
+  async validateUpdate(companyCode: string, _dto: UpdateCompanyDto) {
+    const company = await this.companiesRepository.findOneBy({ companyCode });
+    if (!company) throw new NotFoundException('Company not found');
+    return company;
+  }
+
+  async validateDelete(companyCode: string) {
+    await this.validateUpdate(companyCode, {});
+  }
+
+  async create(dto: CreateCompanyDto) {
+    await this.validateCreate(dto);
+    const companyCode = dto.companyCode.trim();
     const company = await this.companiesRepository.save(this.companiesRepository.create({
       companyCode, companyName: dto.companyName.trim(), level: dto.level, country: dto.country.trim(), city: dto.city.trim(),
       foundedYear: dto.foundedYear, annualRevenue: dto.annualRevenue, employees: dto.employees,
@@ -149,8 +164,7 @@ export class CompaniesService implements OnModuleInit {
   }
 
   async update(companyCode: string, dto: UpdateCompanyDto) {
-    const company = await this.companiesRepository.findOneBy({ companyCode });
-    if (!company) throw new NotFoundException('Company not found');
+    const company = await this.validateUpdate(companyCode, dto);
     const { parentCompany, companyCode: _companyCode, ...companyUpdates } = dto;
     Object.assign(company, companyUpdates);
     const saved = await this.companiesRepository.save(company);
